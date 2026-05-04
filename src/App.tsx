@@ -338,7 +338,7 @@ function Sidebar({ screen, setScreen, isDark, setIsDark, hasResult, T }: {
     { id: "history", label: "تاریخچه", icon: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" /></svg> },
   ];
   return (
-    <div style={{ position: "fixed", right: 0, top: 0, bottom: 0, width: 68, background: T.surface, borderLeft: `1px solid ${T.border}`, display: "flex", flexDirection: "column", alignItems: "center", paddingTop: 16, paddingBottom: 16, zIndex: 200, gap: 2 }}>
+    <div style={{ position: "fixed", right: 0, top: 0, bottom: 0, width: 80, background: T.surface, borderLeft: `1px solid ${T.border}`, display: "flex", flexDirection: "column", alignItems: "center", paddingTop: 20, paddingBottom: 20, zIndex: 200, gap: 2 }}>
       <div style={{ width: 38, height: 38, borderRadius: 11, background: T.coral, display: "flex", alignItems: "center", justifyContent: "center", marginBottom: 16, flexShrink: 0 }}>
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="10" stroke="#fff" strokeWidth="1.5" /><circle cx="12" cy="12" r="6" stroke="#fff" strokeWidth="1" opacity="0.6" /><circle cx="12" cy="12" r="2.5" fill="#fff" /></svg>
       </div>
@@ -694,11 +694,11 @@ export default function App() {
     return (
       <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
         {/* Stats row */}
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 10 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 14 }}>
           {[{ l: "تاریخ", v: result.dateLabel, c: T.text1 }, { l: "تبلیغ‌کننده", v: result.advertisers.length, c: T.coral }, { l: "لید", v: result.leads.length, c: T.green }, { l: "رقیب", v: result.competitors.length, c: T.amber }].map((s, i) => (
-            <div key={i} style={card({ padding: "12px 14px" })}>
-              <p style={{ margin: "0 0 4px", fontSize: 11, color: T.text3 }}>{s.l}</p>
-              <p style={{ margin: 0, fontSize: i === 0 ? 13 : 22, fontWeight: 700, color: s.c }}>{s.v}</p>
+            <div key={i} style={card({ padding: "16px 20px" })}>
+              <p style={{ margin: "0 0 6px", fontSize: 12, color: T.text3 }}>{s.l}</p>
+              <p style={{ margin: 0, fontSize: i === 0 ? 14 : 28, fontWeight: 700, color: s.c }}>{s.v}</p>
             </div>
           ))}
         </div>
@@ -727,35 +727,39 @@ export default function App() {
 
         {/* Tab content */}
         {resultsTab === "advertisers" && (
-          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-              <input value={searchQuery} onChange={e => setSearchQuery(e.target.value)} placeholder="جستجو..." style={{ flex: 1, minWidth: 120, fontSize: 13, padding: "9px 13px", borderRadius: 10, border: `1px solid ${T.border}`, background: T.surface, color: T.text1, direction: "rtl", outline: "none" }} />
-              <select value={filterAgency} onChange={e => setFilterAgency(e.target.value)} style={{ fontSize: 12, padding: "9px 10px", borderRadius: 10, border: `1px solid ${T.border}`, background: T.surface, color: T.text1, cursor: "pointer" }}>
+          <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+            <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+              <input value={searchQuery} onChange={e => setSearchQuery(e.target.value)} placeholder="جستجو..." style={{ flex: 1, minWidth: 140, fontSize: 14, padding: "10px 14px", borderRadius: 11, border: `1px solid ${T.border}`, background: T.surface, color: T.text1, direction: "rtl", outline: "none" }} />
+              <select value={filterAgency} onChange={e => setFilterAgency(e.target.value)} style={{ fontSize: 13, padding: "10px 12px", borderRadius: 11, border: `1px solid ${T.border}`, background: T.surface, color: T.text1, cursor: "pointer" }}>
                 <option value="all">همه آژانس‌ها</option>
                 {allAgencies.map(a => <option key={a} value={a}>{a}</option>)}
               </select>
-              <select value={sortBy} onChange={e => setSortBy(e.target.value)} style={{ fontSize: 12, padding: "9px 10px", borderRadius: 10, border: `1px solid ${T.border}`, background: T.surface, color: T.text1, cursor: "pointer" }}>
+              <select value={sortBy} onChange={e => setSortBy(e.target.value)} style={{ fontSize: 13, padding: "10px 12px", borderRadius: 11, border: `1px solid ${T.border}`, background: T.surface, color: T.text1, cursor: "pointer" }}>
                 <option value="importance">اهمیت</option>
                 <option value="volume">حجم</option>
                 <option value="yektanet">سهم یکتانت</option>
               </select>
             </div>
             {filteredAdvertisers.length === 0
-              ? <div style={{ textAlign: "center", padding: "3rem", color: T.text3, fontSize: 13 }}>نتیجه‌ای یافت نشد</div>
-              : filteredAdvertisers.map((adv, i) => <AdvCard key={i} adv={adv} type="advertiser" />)}
+              ? <div style={{ textAlign: "center", padding: "3rem", color: T.text3, fontSize: 14 }}>نتیجه‌ای یافت نشد</div>
+              : <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(420px, 1fr))", gap: 12 }}>
+                  {filteredAdvertisers.map((adv, i) => <AdvCard key={i} adv={adv} type="advertiser" />)}
+                </div>}
           </div>
         )}
 
         {resultsTab === "leads" && (
-          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+          <div>
             {result.leads.length === 0
-              ? <div style={{ textAlign: "center", padding: "3rem", color: T.text3, fontSize: 13 }}>لیدی یافت نشد</div>
-              : result.leads.map((l, i) => <AdvCard key={i} adv={l} type="lead" />)}
+              ? <div style={{ textAlign: "center", padding: "3rem", color: T.text3, fontSize: 14 }}>لیدی یافت نشد</div>
+              : <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(420px, 1fr))", gap: 12 }}>
+                  {result.leads.map((l, i) => <AdvCard key={i} adv={l} type="lead" />)}
+                </div>}
           </div>
         )}
 
         {resultsTab === "competitors" && (
-          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(380px, 1fr))", gap: 12 }}>
             {result.competitors.length === 0
               ? <div style={{ textAlign: "center", padding: "3rem", color: T.text3, fontSize: 13 }}>رقیبی یافت نشد</div>
               : result.competitors.map((c, i) => (
@@ -772,9 +776,9 @@ export default function App() {
                 </div>
               ))}
             {result.market && (
-              <div style={card({ padding: "16px 18px" })}>
-                <p style={{ margin: "0 0 8px", fontSize: 11, fontWeight: 600, color: T.text3, textTransform: "uppercase", letterSpacing: "0.08em" }}>تحلیل کلی بازار</p>
-                <p style={{ margin: 0, fontSize: 13, color: T.text2, lineHeight: 1.9 }}>{result.market}</p>
+              <div style={{ ...card({ padding: "16px 18px" }), gridColumn: "1 / -1" }}>
+                <p style={{ margin: "0 0 8px", fontSize: 12, fontWeight: 600, color: T.text3, textTransform: "uppercase", letterSpacing: "0.08em" }}>تحلیل کلی بازار</p>
+                <p style={{ margin: 0, fontSize: 14, color: T.text2, lineHeight: 1.9 }}>{result.market}</p>
               </div>
             )}
           </div>
@@ -886,8 +890,8 @@ export default function App() {
 
       <Sidebar screen={screen} setScreen={setScreen} isDark={isDark} setIsDark={setIsDark} hasResult={!!result} T={T} />
 
-      <div style={{ marginRight: 68, minHeight: "100dvh", display: "flex", flexDirection: "column" }}>
-        <div style={{ maxWidth: 720, width: "100%", margin: "0 auto", padding: "32px 24px 80px" }}>
+      <div style={{ marginRight: 80 }}>
+        <div style={{ maxWidth: 1100, width: "100%", margin: "0 auto", padding: "40px 40px 100px" }}>
           {screen === "upload" && <UploadScreen />}
           {screen === "results" && <ResultsScreen />}
           {screen === "reports" && <ReportsScreen />}
