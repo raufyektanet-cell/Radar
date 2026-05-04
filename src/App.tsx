@@ -2,7 +2,8 @@ import { useState, useCallback, useEffect, useMemo } from "react";
 import * as XLSX from "xlsx";
 import { ResponsiveContainer, LineChart, Line } from "recharts";
 
-const MODEL = "claude-sonnet-4-20250514";
+const MODEL = "anthropic/claude-sonnet-4-5";
+const OPENROUTER_KEY = import.meta.env.VITE_OPENROUTER_KEY as string | undefined;
 const HISTORY_KEY = "analyzer:reported_advertisers";
 const REPORTS_KEY = "analyzer:saved_reports";
 
@@ -374,13 +375,19 @@ export default function App() {
     const prevBlock = uniqueReported.length > 0 ? `\n\nPREVIOUSLY REPORTED (skip unless new):\n${uniqueReported.join(", ")}` : "";
     const tmplInstr = TEMPLATE_INSTRUCTIONS[template] ? `\nTEMPLATE: ${TEMPLATE_INSTRUCTIONS[template]}` : "";
     const extraInstr = extra ? `\nADDITIONAL: ${extra}` : "";
-    const resp = await fetch("/api/anthropic/v1/messages", {
+    const apiKey = OPENROUTER_KEY || localStorage.getItem("radar:openrouter_key") || "";
+    if (!apiKey) throw new Error("کلید API تنظیم نشده. لطفاً کلید OpenRouter را وارد کنید.");
+    const resp = await fetch("https://openrouter.ai/api/v1/chat/completions", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ model: MODEL, max_tokens: 4000, system: SYSTEM_PROMPT, messages: [{ role: "user", content: `Data:\n\n${preview}${prevBlock}${tmplInstr}${extraInstr}\n\nToday is ${todayLabel()}. Start with ##. No preamble.` }] })
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${apiKey}`,
+        "HTTP-Referer": "https://raufyektanet-cell.github.io/Radar/",
+      },
+      body: JSON.stringify({ model: MODEL, max_tokens: 4000, messages: [{ role: "system", content: SYSTEM_PROMPT }, { role: "user", content: `Data:\n\n${preview}${prevBlock}${tmplInstr}${extraInstr}\n\nToday is ${todayLabel()}. Start with ##. No preamble.` }] })
     });
     const data = await resp.json();
-    const raw: string = data.content?.map((b: { text?: string }) => b.text || "").join("") || "";
+    const raw: string = data.choices?.[0]?.message?.content || "";
     setRawDebug(raw);
     if (!raw || raw.length < 5) throw new Error("پاسخ خالی");
     const advertisers = extractBlocks("ADVERTISER", raw).map(b => { const f = parseFields(b); const n = f.NAME || ""; return { name: n, ownerid: f.OWNERID || "", manager: managerMap[n] || "", summary: f.SUMMARY || "", agencies: parseAgencies(f.AGENCIES) }; });
