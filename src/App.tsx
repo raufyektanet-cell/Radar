@@ -154,7 +154,7 @@ function parseAgencies(str: string): Agency[] {
   return str.split(",").map(s => { const [k, v] = s.trim().split(":"); const name = TR[k?.trim()] || k?.trim() || ""; return { name, value: parseInt(v) || 0, color: AGENCY_COLORS[name] || "#999" }; }).filter(a => a.name && a.value > 0);
 }
 
-interface Advertiser { name: string; ownerid: string; manager: string; summary: string; agencies: Agency[]; note?: string; }
+interface Advertiser { name: string; ownerid: string; manager: string; summary?: string; agencies: Agency[]; note?: string; }
 interface Competitor { platform: string; newclients: string; topclients: string; note: string; }
 interface AnalysisResult { dateLabel: string; advertisers: Advertiser[]; leads: Advertiser[]; competitors: Competitor[]; market: string; disclaimer: string; id?: string; savedAt?: number; }
 interface HistoryEntry { date: string; dateLabel: string; names: string[]; }
