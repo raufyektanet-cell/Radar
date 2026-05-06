@@ -583,7 +583,7 @@ export default function App() {
   const [filterAgency, setFilterAgency] = useState("all");
   const [sortBy, setSortBy] = useState("importance");
   const [selectedTemplate, setSelectedTemplate] = useState("standard");
-  const [resultsTab, setResultsTab] = useState<"advertisers" | "leads" | "competitors">("advertisers");
+  const [resultsTab, setResultsTab] = useState<"advertisers" | "leads" | "competitors" | "industry">("advertisers");
   const [modalAdv, setModalAdv] = useState<{ adv: Advertiser; type: string } | null>(null);
   const [toast, setToast] = useState<{ msg: string; type: "success" | "error" } | null>(null);
   const [loadingProgress, setLoadingProgress] = useState(0);
@@ -898,10 +898,31 @@ export default function App() {
   // ─ Results screen ───────────────────────────────────────────────────────────
   const ResultsScreen = () => {
     if (!result) return <div style={{ textAlign: "center", padding: "4rem", color: T.text3, fontSize: 14 }}>هنوز آنالیزی انجام نشده</div>;
-    const tabs: { id: "advertisers" | "leads" | "competitors"; label: string; count: number }[] = [
+
+    // Industry stats from result + refData
+    type IndustryStat = { name: string; advertisers: Advertiser[]; leads: Advertiser[]; avgYkt: number; topCompetitor: string };
+    const industryMap = new Map<string, { advs: Advertiser[]; leads: Advertiser[] }>();
+    [...result.advertisers, ...result.leads].forEach(a => {
+      const ind = a.industry1 || "سایر";
+      if (!industryMap.has(ind)) industryMap.set(ind, { advs: [], leads: [] });
+      if (result.advertisers.includes(a)) industryMap.get(ind)!.advs.push(a);
+      else industryMap.get(ind)!.leads.push(a);
+    });
+    const industryStats: IndustryStat[] = [...industryMap.entries()].map(([name, { advs, leads }]) => {
+      const yktPcts = advs.map(a => { const t = a.agencies.reduce((s, x) => s + x.value, 0); const y = a.agencies.find(x => x.name === "یکتانت"); return t > 0 && y ? y.value / t : 0; });
+      const avgYkt = yktPcts.length > 0 ? Math.round(yktPcts.reduce((a, b) => a + b, 0) / yktPcts.length * 100) : 0;
+      const compCount: Record<string, number> = {};
+      advs.forEach(a => a.agencies.filter(x => x.name !== "یکتانت").forEach(x => { compCount[x.name] = (compCount[x.name] || 0) + x.value; }));
+      const topCompetitor = Object.entries(compCount).sort((a, b) => b[1] - a[1])[0]?.[0] || "";
+      return { name, advertisers: advs, leads, avgYkt, topCompetitor };
+    }).sort((a, b) => (b.advertisers.length + b.leads.length) - (a.advertisers.length + a.leads.length));
+
+    const hasIndustry = industryStats.some(s => s.name !== "سایر");
+    const tabs: { id: "advertisers" | "leads" | "competitors" | "industry"; label: string; count: number }[] = [
       { id: "advertisers", label: "تبلیغ‌کننده‌ها", count: result.advertisers.length },
       { id: "leads", label: "لیدها", count: result.leads.length },
       { id: "competitors", label: "رقبا", count: result.competitors.length },
+      ...(hasIndustry ? [{ id: "industry" as const, label: "صنعت", count: industryStats.length }] : []),
     ];
     return (
       <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
@@ -993,6 +1014,52 @@ export default function App() {
                 <p style={{ margin: 0, fontSize: 14, color: T.text2, lineHeight: 1.9 }}>{result.market}</p>
               </div>
             )}
+          </div>
+        )}
+
+        {resultsTab === "industry" && (
+          <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+            {industryStats.length === 0
+              ? <div style={{ textAlign: "center", padding: "4rem", color: T.text3, fontSize: 14 }}>اطلاعات صنعتی موجود نیست — ابتدا اطلاعات مرجع بارگذاری شود</div>
+              : industryStats.map((s, i) => {
+                const total = s.advertisers.length + s.leads.length;
+                const yktColor = s.avgYkt >= 50 ? T.coral : s.avgYkt >= 30 ? T.amber : T.danger;
+                return (
+                  <div key={i} style={card({ padding: "16px 20px" })} className="fade-up">
+                    <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12, marginBottom: 12 }}>
+                      <div style={{ flex: 1 }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+                          <span style={{ fontSize: 15, fontWeight: 700, color: T.text1 }}>{s.name}</span>
+                          <span style={{ fontSize: 11, color: T.text3, background: T.surface2, padding: "2px 9px", borderRadius: 20 }}>{total} اکانت</span>
+                          {s.leads.length > 0 && <span style={{ fontSize: 11, color: T.green, background: T.greenDim, padding: "2px 9px", borderRadius: 20 }}>{s.leads.length} لید</span>}
+                          {s.topCompetitor && <span style={{ fontSize: 11, color: T.amber, background: T.amberDim, padding: "2px 9px", borderRadius: 20 }}>رقیب اصلی: {s.topCompetitor}</span>}
+                        </div>
+                        <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 10 }}>
+                          <div style={{ flex: 1, height: 6, borderRadius: 3, background: T.border, overflow: "hidden" }}>
+                            <div style={{ width: `${s.avgYkt}%`, height: "100%", background: yktColor, borderRadius: 3, transition: "width 0.5s ease" }} />
+                          </div>
+                          <span style={{ fontSize: 13, fontWeight: 700, color: yktColor, flexShrink: 0 }}>یکتانت {s.avgYkt}٪</span>
+                        </div>
+                      </div>
+                      <button onClick={() => { setResultsTab("advertisers"); setFilterAgency("all"); setSearchQuery(s.name); }}
+                        style={btnStyle({ fontSize: 11, padding: "6px 12px", flexShrink: 0 })}>
+                        مشاهده اکانت‌ها
+                      </button>
+                    </div>
+                    {s.advertisers.slice(0, 4).length > 0 && (
+                      <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                        {s.advertisers.slice(0, 4).map((a, j) => (
+                          <button key={j} onClick={() => setModalAdv({ adv: a, type: "advertiser" })}
+                            style={{ fontSize: 11, color: T.text2, background: T.surface2, border: `1px solid ${T.border}`, padding: "3px 10px", borderRadius: 20, cursor: "pointer", direction: "ltr" }}>
+                            {a.name}
+                          </button>
+                        ))}
+                        {s.advertisers.length > 4 && <span style={{ fontSize: 11, color: T.text3, padding: "3px 6px" }}>+{s.advertisers.length - 4} دیگر</span>}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
           </div>
         )}
 
