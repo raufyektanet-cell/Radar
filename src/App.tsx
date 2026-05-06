@@ -9,6 +9,35 @@ const REPORTS_KEY = "analyzer:saved_reports";
 const THEME_KEY = "analyzer:theme";
 const SESSION_KEY = "radar:session";
 const APP_PASSWORD = (import.meta.env.VITE_APP_PASSWORD as string | undefined) || "radar1403";
+const REF_CACHE_KEY = "radar:refdata_v2";
+const REF_CACHE_TTL = 24 * 60 * 60 * 1000;
+const CUSTOMERS_URL = "https://raw.githubusercontent.com/raufyektanet-cell/Radar/main/last_2_years_all_active_customers_V2_For_Radar.xlsx";
+
+interface RefEntry { industry1: string; industry2: string; team: string; manager: string; }
+type RefMap = Map<string, RefEntry>;
+
+async function loadRefData(): Promise<RefMap> {
+  try {
+    const cached = localStorage.getItem(REF_CACHE_KEY);
+    if (cached) {
+      const { entries, ts } = JSON.parse(cached);
+      if (Date.now() - ts < REF_CACHE_TTL) return new Map(entries);
+    }
+  } catch { /* ignore */ }
+  const resp = await fetch(CUSTOMERS_URL);
+  const buf = await resp.arrayBuffer();
+  const wb = XLSX.read(buf, { type: "array" });
+  const ws = wb.Sheets[wb.SheetNames[0]];
+  const rows = XLSX.utils.sheet_to_json<Record<string, string>>(ws, { defval: "" });
+  const map: RefMap = new Map();
+  for (const r of rows) {
+    const id = String(r["owner_id"] || "").trim();
+    if (!id) continue;
+    map.set(id, { industry1: r["industry_tag_1"] || "", industry2: r["industry_tag_2"] || "", team: r["team"] || "", manager: r["manager_last_name"] || "" });
+  }
+  try { localStorage.setItem(REF_CACHE_KEY, JSON.stringify({ entries: [...map.entries()], ts: Date.now() })); } catch { /* quota */ }
+  return map;
+}
 
 const DARK = {
   bg: "#0C0C0E", surface: "#141416", surface2: "#1E1E23",
@@ -174,7 +203,7 @@ function parseAgencies(str: string): Agency[] {
   return str.split(",").map(s => { const [k, v] = s.trim().split(":"); const name = TR[k?.trim()] || k?.trim() || ""; return { name, value: parseInt(v) || 0, color: AGENCY_COLORS[name] || "#999" }; }).filter(a => a.name && a.value > 0);
 }
 
-interface Advertiser { name: string; ownerid: string; manager: string; summary?: string; note?: string; agencies: Agency[]; }
+interface Advertiser { name: string; ownerid: string; manager: string; summary?: string; note?: string; agencies: Agency[]; industry1?: string; industry2?: string; }
 interface Competitor { platform: string; newclients: string; topclients: string; note: string; }
 interface AnalysisResult { dateLabel: string; advertisers: Advertiser[]; leads: Advertiser[]; competitors: Competitor[]; market: string; disclaimer: string; id?: string; savedAt?: number; }
 interface HistoryEntry { date: string; dateLabel: string; names: string[]; }
@@ -321,6 +350,12 @@ function DetailModal({ adv, type, T, onClose, onRegen, regenLoading }: { adv: Ad
             </div>
           </div>
         )}
+        {(adv.industry1 || adv.industry2) && (
+          <div style={{ display: "flex", gap: 8, marginBottom: 14, flexWrap: "wrap" }}>
+            {adv.industry1 && <span style={{ fontSize: 12, color: T.blue, background: T.blueDim, padding: "4px 12px", borderRadius: 20, border: `1px solid rgba(74,158,232,0.2)` }}>{adv.industry1}</span>}
+            {adv.industry2 && <span style={{ fontSize: 12, color: T.text3, background: T.surface2, padding: "4px 12px", borderRadius: 20, border: `1px solid ${T.border}` }}>{adv.industry2}</span>}
+          </div>
+        )}
         <div style={{ background: T.surface2, borderRadius: 12, padding: "14px 16px" }}>
           <p style={{ margin: 0, fontSize: 14, color: T.text2, lineHeight: 2, direction: "rtl" }}>
             {type === "lead" ? adv.note : adv.summary}
@@ -440,8 +475,8 @@ function LoginPage({ T, onLogin }: { T: Theme; onLogin: (u: SessionUser) => void
 
 // ── Sidebar ───────────────────────────────────────────────────────────────────
 
-function Sidebar({ screen, setScreen, isDark, setIsDark, hasResult, session, onLogout, T }: {
-  screen: string; setScreen: (s: string) => void; isDark: boolean; setIsDark: (v: boolean) => void; hasResult: boolean; session: SessionUser; onLogout: () => void; T: Theme;
+function Sidebar({ screen, setScreen, isDark, setIsDark, hasResult, session, onLogout, refLoading, refError, T }: {
+  screen: string; setScreen: (s: string) => void; isDark: boolean; setIsDark: (v: boolean) => void; hasResult: boolean; session: SessionUser; onLogout: () => void; refLoading: boolean; refError: boolean; T: Theme;
 }) {
   const items = [
     { id: "upload", label: "آنالیز", icon: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4" /><polyline points="17 8 12 3 7 8" /><line x1="12" y1="3" x2="12" y2="15" /></svg> },
@@ -465,6 +500,9 @@ function Sidebar({ screen, setScreen, isDark, setIsDark, hasResult, session, onL
         );
       })}
       <div style={{ flex: 1 }} />
+      {/* Ref-data status dot */}
+      <div title={refLoading ? "در حال بارگذاری اطلاعات..." : refError ? "خطا در بارگذاری اطلاعات" : "اطلاعات بارگذاری شد"}
+        style={{ width: 8, height: 8, borderRadius: "50%", background: refLoading ? T.amber : refError ? T.danger : T.green, marginBottom: 10, flexShrink: 0, animation: refLoading ? "radarPulse 1.5s ease-out infinite" : "none" }} />
       {/* User avatar */}
       <div title={`${session.managerFa} — ${session.teamFa}`}
         style={{ width: 38, height: 38, borderRadius: "50%", background: T.coralDim, border: `1.5px solid ${T.coralBorder}`, display: "flex", alignItems: "center", justifyContent: "center", color: T.coral, fontWeight: 700, fontSize: 13, marginBottom: 6, flexShrink: 0 }}>
@@ -505,7 +543,20 @@ export default function App() {
   const handleLogout = () => {
     localStorage.removeItem(SESSION_KEY);
     setSession(null);
+    setRefData(null);
   };
+
+  const [refData, setRefData] = useState<RefMap | null>(null);
+  const [refLoading, setRefLoading] = useState(false);
+  const [refError, setRefError] = useState(false);
+
+  useEffect(() => {
+    if (!session || refData) return;
+    setRefLoading(true); setRefError(false);
+    loadRefData()
+      .then(m => { setRefData(m); setRefLoading(false); })
+      .catch(() => { setRefLoading(false); setRefError(true); });
+  }, [session]);
 
   const [isDark, setIsDark] = useState(() => {
     try { return localStorage.getItem(THEME_KEY) === "dark"; } catch { return false; }
@@ -622,8 +673,12 @@ export default function App() {
     }
     setRawDebug(raw);
     if (!raw || raw.length < 5) throw new Error("پاسخ خالی از API");
-    const advertisers = extractBlocks("ADVERTISER", raw).map(b => { const f = parseFields(b); const n = f.NAME || ""; return { name: n, ownerid: f.OWNERID || "", manager: managerMap[n] || "", summary: f.SUMMARY || "", agencies: parseAgencies(f.AGENCIES) }; });
-    const leads = extractBlocks("LEAD", raw).map(b => { const f = parseFields(b); const n = f.NAME || ""; return { name: n, ownerid: f.OWNERID || "", manager: managerMap[n] || "", note: f.NOTE || "", agencies: parseAgencies(f.AGENCIES) }; });
+    const enrichIndustry = (ownerid: string) => {
+      const ref = refData?.get(ownerid);
+      return { industry1: ref?.industry1 || "", industry2: ref?.industry2 || "" };
+    };
+    const advertisers = extractBlocks("ADVERTISER", raw).map(b => { const f = parseFields(b); const n = f.NAME || ""; const id = f.OWNERID || ""; return { name: n, ownerid: id, manager: managerMap[n] || "", summary: f.SUMMARY || "", agencies: parseAgencies(f.AGENCIES), ...enrichIndustry(id) }; });
+    const leads = extractBlocks("LEAD", raw).map(b => { const f = parseFields(b); const n = f.NAME || ""; const id = f.OWNERID || ""; return { name: n, ownerid: id, manager: managerMap[n] || "", note: f.NOTE || "", agencies: parseAgencies(f.AGENCIES), ...enrichIndustry(id) }; });
     const competitors = extractBlocks("COMPETITOR", raw).map(b => { const f = parseFields(b); return { platform: f.PLATFORM || "", newclients: f.NEWCLIENTS || "", topclients: f.TOPCLIENTS || "", note: f.NOTE || "" }; });
     const market = (extractBlocks("MARKET", raw)[0] || "").trim();
     const disclaimer = (extractBlocks("DISCLAIMER", raw)[0] || "داده‌ها بر اساس کراول وب هستن و تخمینی‌اند — روندها قابل اعتمادند اما اعداد دقیق نیستن.").trim();
@@ -644,11 +699,26 @@ export default function App() {
     setLoadingProgress(100);
   };
 
+  const filterRowsByManager = (rows: Record<string, string>[]): Record<string, string>[] => {
+    if (!session || session.isAdmin) return rows;
+    const teamEn = session.teamEn.toLowerCase();
+    // Try manager_team column first
+    const byTeam = rows.filter(r => (r.manager_team || r.team || "").toLowerCase().includes(teamEn));
+    if (byTeam.length > 0) return byTeam;
+    // Fallback: match by manager last name in account_manager_name column
+    const lastName = session.managerEn.split(" ").pop()?.toLowerCase() || "";
+    const byName = rows.filter(r => (r.account_manager_name || "").toLowerCase().includes(lastName));
+    return byName.length > 0 ? byName : rows; // last resort: all rows
+  };
+
   const analyze = async () => {
     setErrMsg(""); setRawDebug(""); setShowDebug(false); setStep("loading"); setScreen("upload");
     startLoadingProgress();
     try {
-      const parsed = await runAnalysis(csvData!.text, csvData!.rows, selectedTemplate);
+      const filteredRows = filterRowsByManager(csvData!.rows);
+      const filteredCsv = filteredRows.map(r => Object.values(r).join(",")).join("\n");
+      const csvHeader = Object.keys(filteredRows[0] || {}).join(",");
+      const parsed = await runAnalysis(csvHeader + "\n" + filteredCsv, filteredRows, selectedTemplate);
       stopLoadingProgress();
       if (!parsed.advertisers.length && !parsed.leads.length && !parsed.competitors.length) {
         setErrMsg("هیچ بلاکی پارس نشد — پاسخ خام در دیباگ"); setShowDebug(true); setStep("ready"); return;
@@ -713,6 +783,7 @@ export default function App() {
             <span style={{ fontSize: 14, fontWeight: 600, color: T.text1, direction: "ltr" }}>{adv.name}</span>
             <span style={{ fontSize: 11, color: T.text3 }}>#{adv.ownerid}</span>
             {adv.manager && <span style={{ fontSize: 11, color: accent, background: accentDim, border: `1px solid ${accentBorder}`, padding: "1px 8px", borderRadius: 20 }}>{adv.manager}</span>}
+            {adv.industry1 && <span style={{ fontSize: 10, color: T.blue, background: T.blueDim, padding: "1px 7px", borderRadius: 20, border: `1px solid rgba(74,158,232,0.2)` }}>{adv.industry1}</span>}
           </div>
           <p style={{ margin: "0 0 8px", fontSize: 12, color: T.text2, lineHeight: 1.7, display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>
             {type === "lead" ? adv.note : adv.summary}
@@ -1033,7 +1104,7 @@ export default function App() {
     <div style={{ minHeight: "100dvh", background: T.bg, color: T.text1, direction: "rtl", fontFamily: "'Vazirmatn', system-ui, sans-serif" }}>
       <style>{globalStyles}</style>
 
-      <Sidebar screen={screen} setScreen={setScreen} isDark={isDark} setIsDark={setIsDark} hasResult={!!result} session={session} onLogout={handleLogout} T={T} />
+      <Sidebar screen={screen} setScreen={setScreen} isDark={isDark} setIsDark={setIsDark} hasResult={!!result} session={session} onLogout={handleLogout} refLoading={refLoading} refError={refError} T={T} />
 
       <div style={{ marginRight: 80 }}>
         <div style={{ maxWidth: 1100, width: "100%", margin: "0 auto", padding: "40px 40px 100px" }}>
