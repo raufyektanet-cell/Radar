@@ -9,35 +9,6 @@ const REPORTS_KEY = "analyzer:saved_reports";
 const THEME_KEY = "analyzer:theme";
 const SESSION_KEY = "radar:session";
 const APP_PASSWORD = (import.meta.env.VITE_APP_PASSWORD as string | undefined) || "radar1403";
-const REF_CACHE_KEY = "radar:refdata_v2";
-const REF_CACHE_TTL = 24 * 60 * 60 * 1000;
-const CUSTOMERS_URL = "https://raw.githubusercontent.com/raufyektanet-cell/Radar/main/last_2_years_all_active_customers_V2_For_Radar.xlsx";
-
-interface RefEntry { industry1: string; industry2: string; team: string; manager: string; }
-type RefMap = Map<string, RefEntry>;
-
-async function loadRefData(): Promise<RefMap> {
-  try {
-    const cached = localStorage.getItem(REF_CACHE_KEY);
-    if (cached) {
-      const { entries, ts } = JSON.parse(cached);
-      if (Date.now() - ts < REF_CACHE_TTL) return new Map(entries);
-    }
-  } catch { /* ignore */ }
-  const resp = await fetch(CUSTOMERS_URL);
-  const buf = await resp.arrayBuffer();
-  const wb = XLSX.read(buf, { type: "array" });
-  const ws = wb.Sheets[wb.SheetNames[0]];
-  const rows = XLSX.utils.sheet_to_json<Record<string, string>>(ws, { defval: "" });
-  const map: RefMap = new Map();
-  for (const r of rows) {
-    const id = String(r["owner_id"] || "").trim();
-    if (!id) continue;
-    map.set(id, { industry1: r["industry_tag_1"] || "", industry2: r["industry_tag_2"] || "", team: r["team"] || "", manager: r["manager_last_name"] || "" });
-  }
-  try { localStorage.setItem(REF_CACHE_KEY, JSON.stringify({ entries: [...map.entries()], ts: Date.now() })); } catch { /* quota */ }
-  return map;
-}
 
 const DARK = {
   bg: "#0C0C0E", surface: "#141416", surface2: "#1E1E23",
@@ -70,6 +41,7 @@ const AGENCY_COLORS: Record<string, string> = {
   "یلو ادوایز": "#F59E0B", "بله": "#10B981", "روبیکا": "#EC4899", "دیما": "#6366F1",
   "طاووس": "#14B8A6", "دارت": "#F97316", "چاووش": "#84CC16", "تلوبیون": "#06B6D4",
   "ایتا": "#A78BFA", "سروش": "#FB923C", "نجوا": "#34D399", "بازار": "#64748B", "مایکت": "#78716C",
+  "تریبون": "#0EA5E9", "جریان": "#D946EF", "ادورج": "#22D3EE",
 };
 
 const TEMPLATES: Record<string, { label: string; desc: string }> = {
@@ -87,19 +59,20 @@ const TEMPLATE_INSTRUCTIONS: Record<string, string> = {
 const SYSTEM_PROMPT = `You are a market intelligence analyst at Yektanet (یکتانت). You write a daily Persian briefing for sales managers.
 
 CSV STRUCTURE
-- date, owner_name (copy EXACTLY), manager_team, account_manager_name, total_sessions
-- Agency columns: Yektanet, Tapsell, Adexo, Aparat, Daart, Deema, Tavoos, YellowAdwise, Bale_NonYektanet, Rubika_NonYektanet, Eitaa_NonYektanet, Soroush_NonYektanet, Telewebion, Chavosh, Najva, Triboon, Jaryan, Adverge, Bazaar, Myket
-- OUR NETWORK: Yektanet only | COMPETITORS: all others | Empty=0
+- Date (date), Owner_id (id), Advertiser_name (copy EXACTLY as-is), Category_level_1 (industry), Category_level_2 (sub-industry), Team, Account_manager_name, Performance_manager_name, Supervisor_name, Daily_spend (تومان spent on Yektanet), Total_sessions
+- Agency session columns: Yektanet, Tapsell, Deema, Tavoos, Adexo, Chavosh, Aparat, Daart, Yellowadwise, Najva, Triboon, Jaryan, Telewebion, Adverge, Soroush, Soroush_ny, Bale_ny, Rubika_ny, Eitaa_ny, Bazaar, Myket
+- OUR NETWORK: Yektanet only | COMPETITORS: all others | Empty/blank=0
+- _ny suffix = non-Yektanet traffic on that platform
 
-SPECIAL: همکده،5040،بیکوپلاس،owner_id 9868=SKIP. Aparat/Tavoos/Telewebion=VIDEO only. Aparat-owned=NOT leads.
+SPECIAL: همکده،5040،بیکوپلاس،Owner_id 9868=SKIP. Aparat/Tavoos/Telewebion=VIDEO only. Aparat-owned=NOT leads.
 
 PRIORITY: +5 reactivated | +4 very high sessions | +3 new/cut agency or Yektanet declining >20pts | +2 3+ agencies/high sessions | +1 dominant changed | -999 id 9868 | -3 همکده/5040/بیکوپلاس | -2 minor. Aim 8-12.
 
-AGENCY TRANSLATIONS: Yektanet→یکتانت|Tapsell→تپسل|Adexo→ادکسو|Aparat→آپارات|Deema→دیما|Tavoos→طاووس|YellowAdwise→یلو ادوایز|Daart→دارت|Chavosh→چاووش|Telewebion→تلوبیون|Bale_NonYektanet→بله (غیریکتانتی)|Rubika_NonYektanet→روبیکا (غیریکتانتی)|Eitaa_NonYektanet→ایتا (غیریکتانتی)|Soroush_NonYektanet→سروش (غیریکتانتی)|Bazaar→بازار|Myket→مایکت
+AGENCY TRANSLATIONS: Yektanet→یکتانت|Tapsell→تپسل|Adexo→ادکسو|Aparat→آپارات|Deema→دیما|Tavoos→طاووس|Yellowadwise→یلو ادوایز|Daart→دارت|Chavosh→چاووش|Telewebion→تلوبیون|Bale_ny→بله|Rubika_ny→روبیکا|Eitaa_ny→ایتا|Soroush_ny→سروش|Soroush→سروش|Najva→نجوا|Triboon→تریبون|Jaryan→جریان|Adverge→ادورج|Bazaar→بازار|Myket→مایکت
 
 NUMBERS: "حدود ۳۰ هزار سشن" | shares nearest 5٪ | "یکتانت (۴۸٪)|تپسل (۱۸٪)" — NO session counts next to percentages. End each SUMMARY with: حجم کل دیروز: حدود X هزار سشن
 DATE: Latest→دیروز|Before→پریروز|Earlier→اوایل هفته. Never English month names.
-NO hashtags. NO کمپین. NO translated owner_name. NO English in output. Start with ##
+NO hashtags. NO کمپین. NO translated Advertiser_name. NO English in output. Start with ##
 
 OUTPUT:
 ##ADVERTISER##
@@ -111,7 +84,7 @@ SUMMARY: یکتانت (۴۰٪) | تپسل (۵۵٪). سهم یکتانت از ۷�
 ##LEAD##
 NAME: [x.ir](http://x.ir)
 OWNERID: 999
-AGENCIES: Bale_NonYektanet:1500
+AGENCIES: Bale_ny:1500
 NOTE: یکتانت صفره. قابل اپروچه. حجم کل دیروز: حدود ۱.۵ هزار سشن
 ##END##
 ##COMPETITOR##
@@ -127,7 +100,7 @@ NOTE: وضعیت کلی بازار.
 داده‌ها بر اساس کراول وب هستن و تخمینی‌اند — روندها قابل اعتمادند اما اعداد دقیق نیستن.
 ##END##
 
-RULES: No hashtags. Max 2 sentences per advertiser. Only top 2 agencies. LEADS mandatory. No کمپین. No translated owner_name. No English. Start with ##`;
+RULES: No hashtags. Max 2 sentences per advertiser. Only top 2 agencies. LEADS mandatory. No کمپین. No translated Advertiser_name. No English. Start with ##`;
 
 // ── Utilities ────────────────────────────────────────────────────────────────
 
@@ -169,8 +142,8 @@ function readFile(file: File, onSuccess: (rows: Record<string, string>[], csvTex
 }
 
 function getStats(rows: Record<string, string>[]) {
-  const dates = [...new Set(rows.map(r => normalizeDate(r.date)).filter(Boolean))].sort();
-  return { dates, lastDate: dates[dates.length - 1] || "", totalRows: rows.length, advertisers: [...new Set(rows.map(r => r.owner_name).filter(Boolean))].length };
+  const dates = [...new Set(rows.map(r => normalizeDate(r.Date || r.date)).filter(Boolean))].sort();
+  return { dates, lastDate: dates[dates.length - 1] || "", totalRows: rows.length, advertisers: [...new Set(rows.map(r => r.Advertiser_name || r.owner_name).filter(Boolean))].length };
 }
 
 function todayLabel(): string {
@@ -199,7 +172,15 @@ interface Agency { name: string; value: number; color: string; }
 
 function parseAgencies(str: string): Agency[] {
   if (!str) return [];
-  const TR: Record<string, string> = { Yektanet: "یکتانت", Tapsell: "تپسل", Adexo: "ادکسو", Aparat: "آپارات", Deema: "دیما", Tavoos: "طاووس", YellowAdwise: "یلو ادوایز", Daart: "دارت", Chavosh: "چاووش", Telewebion: "تلوبیون", Bale_NonYektanet: "بله", Rubika_NonYektanet: "روبیکا", Eitaa_NonYektanet: "ایتا", Soroush_NonYektanet: "سروش", Najva: "نجوا", Bazaar: "بازار", Myket: "مایکت" };
+  const TR: Record<string, string> = {
+    Yektanet: "یکتانت", Tapsell: "تپسل", Adexo: "ادکسو", Aparat: "آپارات", Deema: "دیما",
+    Tavoos: "طاووس", Yellowadwise: "یلو ادوایز", YellowAdwise: "یلو ادوایز", Daart: "دارت",
+    Chavosh: "چاووش", Telewebion: "تلوبیون", Bale_ny: "بله", Bale_NonYektanet: "بله",
+    Rubika_ny: "روبیکا", Rubika_NonYektanet: "روبیکا", Eitaa_ny: "ایتا", Eitaa_NonYektanet: "ایتا",
+    Soroush_ny: "سروش", Soroush_NonYektanet: "سروش", Soroush: "سروش",
+    Najva: "نجوا", Triboon: "تریبون", Jaryan: "جریان", Adverge: "ادورج",
+    Bazaar: "بازار", Myket: "مایکت",
+  };
   return str.split(",").map(s => { const [k, v] = s.trim().split(":"); const name = TR[k?.trim()] || k?.trim() || ""; return { name, value: parseInt(v) || 0, color: AGENCY_COLORS[name] || "#999" }; }).filter(a => a.name && a.value > 0);
 }
 
@@ -475,8 +456,8 @@ function LoginPage({ T, onLogin }: { T: Theme; onLogin: (u: SessionUser) => void
 
 // ── Sidebar ───────────────────────────────────────────────────────────────────
 
-function Sidebar({ screen, setScreen, isDark, setIsDark, hasResult, session, onLogout, refLoading, refError, T }: {
-  screen: string; setScreen: (s: string) => void; isDark: boolean; setIsDark: (v: boolean) => void; hasResult: boolean; session: SessionUser; onLogout: () => void; refLoading: boolean; refError: boolean; T: Theme;
+function Sidebar({ screen, setScreen, isDark, setIsDark, hasResult, session, onLogout, T }: {
+  screen: string; setScreen: (s: string) => void; isDark: boolean; setIsDark: (v: boolean) => void; hasResult: boolean; session: SessionUser; onLogout: () => void; T: Theme;
 }) {
   const items = [
     { id: "upload", label: "آنالیز", icon: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4" /><polyline points="17 8 12 3 7 8" /><line x1="12" y1="3" x2="12" y2="15" /></svg> },
@@ -501,9 +482,6 @@ function Sidebar({ screen, setScreen, isDark, setIsDark, hasResult, session, onL
         );
       })}
       <div style={{ flex: 1 }} />
-      {/* Ref-data status dot */}
-      <div title={refLoading ? "در حال بارگذاری اطلاعات..." : refError ? "خطا در بارگذاری اطلاعات" : "اطلاعات بارگذاری شد"}
-        style={{ width: 8, height: 8, borderRadius: "50%", background: refLoading ? T.amber : refError ? T.danger : T.green, marginBottom: 10, flexShrink: 0, animation: refLoading ? "radarPulse 1.5s ease-out infinite" : "none" }} />
       {/* User avatar */}
       <div title={`${session.managerFa} — ${session.teamFa}`} aria-label={`کاربر: ${session.managerFa}`} role="img"
         style={{ width: 44, height: 44, borderRadius: "50%", background: T.coralDim, border: `1.5px solid ${T.coralBorder}`, display: "flex", alignItems: "center", justifyContent: "center", color: T.coral, fontWeight: 700, fontSize: 14, marginBottom: 6, flexShrink: 0 }}>
@@ -544,20 +522,7 @@ export default function App() {
   const handleLogout = () => {
     localStorage.removeItem(SESSION_KEY);
     setSession(null);
-    setRefData(null);
   };
-
-  const [refData, setRefData] = useState<RefMap | null>(null);
-  const [refLoading, setRefLoading] = useState(false);
-  const [refError, setRefError] = useState(false);
-
-  useEffect(() => {
-    if (!session || refData) return;
-    setRefLoading(true); setRefError(false);
-    loadRefData()
-      .then(m => { setRefData(m); setRefLoading(false); })
-      .catch(() => { setRefLoading(false); setRefError(true); });
-  }, [session]);
 
   const [isDark, setIsDark] = useState(() => {
     try { return localStorage.getItem(THEME_KEY) === "dark"; } catch { return false; }
@@ -632,10 +597,13 @@ export default function App() {
   }, []);
   const onDrop = useCallback((e: React.DragEvent) => { e.preventDefault(); setDragOver(false); handleFile(e.dataTransfer.files[0]); }, [handleFile]);
 
-  const buildManagerMap = (rows: Record<string, string>[]) => {
-    const mCol = Object.keys(rows[0] || {}).find(k => k.trim().toLowerCase().replace(/[_ -]/g, "") === "accountmanagername") || Object.keys(rows[0] || {}).find(k => k.trim().toLowerCase().replace(/[_ -]/g, "") === "managerteam") || "";
+  const buildManagerMap = (rows: Record<string, string>[]): Record<string, string> => {
     const map: Record<string, string> = {};
-    rows.forEach(r => { const n = (r.owner_name || "").toString().trim(); const m = mCol ? (r[mCol] || "").toString().trim() : ""; if (!n || !m) return; map[n] = m; const p = n.split(" - "); if (p.length >= 2) { map[p.slice(1).join(" - ").trim()] = m; map[p[0].trim()] = m; } });
+    rows.forEach(r => {
+      const n = (r.Advertiser_name || r.owner_name || "").toString().trim();
+      const m = (r.Account_manager_name || r.account_manager_name || "").toString().trim();
+      if (n && m) map[n] = m;
+    });
     return map;
   };
 
@@ -677,8 +645,18 @@ export default function App() {
     }
     setRawDebug(raw);
     if (!raw || raw.length < 5) throw new Error("پاسخ خالی از API");
+    // Build industry ref map from the uploaded CSV rows directly
+    const localRef = new Map<string, { industry1: string; industry2: string }>();
+    rows.forEach(r => {
+      const id = String(r.Owner_id || r.owner_id || "").trim();
+      if (!id) return;
+      localRef.set(id, {
+        industry1: r.Category_level_1 || r.industry_tag_1 || "",
+        industry2: r.Category_level_2 || r.industry_tag_2 || "",
+      });
+    });
     const enrichIndustry = (ownerid: string) => {
-      const ref = refData?.get(ownerid);
+      const ref = localRef.get(ownerid);
       return { industry1: ref?.industry1 || "", industry2: ref?.industry2 || "" };
     };
     const advertisers = extractBlocks("ADVERTISER", raw).map(b => { const f = parseFields(b); const n = f.NAME || ""; const id = f.OWNERID || ""; return { name: n, ownerid: id, manager: managerMap[n] || "", summary: f.SUMMARY || "", agencies: parseAgencies(f.AGENCIES), ...enrichIndustry(id) }; });
@@ -705,14 +683,17 @@ export default function App() {
 
   const filterRowsByManager = (rows: Record<string, string>[]): Record<string, string>[] => {
     if (!session || session.isAdmin) return rows;
+    // Match Team column against Persian team name first
+    const byTeamFa = rows.filter(r => (r.Team || r.manager_team || "").trim() === session.teamFa);
+    if (byTeamFa.length > 0) return byTeamFa;
+    // Fallback: case-insensitive English team name partial match
     const teamEn = session.teamEn.toLowerCase();
-    // Try manager_team column first
-    const byTeam = rows.filter(r => (r.manager_team || r.team || "").toLowerCase().includes(teamEn));
-    if (byTeam.length > 0) return byTeam;
-    // Fallback: match by manager last name in account_manager_name column
+    const byTeamEn = rows.filter(r => (r.Team || r.manager_team || "").toLowerCase().includes(teamEn));
+    if (byTeamEn.length > 0) return byTeamEn;
+    // Fallback: match by account manager last name
     const lastName = session.managerEn.split(" ").pop()?.toLowerCase() || "";
-    const byName = rows.filter(r => (r.account_manager_name || "").toLowerCase().includes(lastName));
-    return byName.length > 0 ? byName : rows; // last resort: all rows
+    const byName = rows.filter(r => (r.Account_manager_name || r.account_manager_name || "").toLowerCase().includes(lastName));
+    return byName.length > 0 ? byName : rows;
   };
 
   const analyze = async () => {
@@ -1220,10 +1201,6 @@ export default function App() {
       if (trimmed) { localStorage.setItem("radar:openrouter_key", trimmed); showToast("کلید API ذخیره شد ✓"); }
       else { localStorage.removeItem("radar:openrouter_key"); showToast("کلید API حذف شد"); }
     };
-    const handleClearRef = () => {
-      localStorage.removeItem(REF_CACHE_KEY);
-      showToast("کش داده‌های مرجع پاک شد");
-    };
     return (
       <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
         <p style={{ margin: "0 0 4px", fontSize: 17, fontWeight: 700, color: T.text1 }}>تنظیمات</p>
@@ -1243,9 +1220,14 @@ export default function App() {
         </div>
 
         <div style={card({ padding: "18px 22px" })}>
-          <p style={{ margin: "0 0 10px", fontSize: 13, fontWeight: 600, color: T.text2 }}>کش داده‌های مرجع</p>
-          <p style={{ margin: "0 0 14px", fontSize: 12, color: T.text3 }}>اطلاعات صنعت و تیم مشتریان برای ۲۴ ساعت ذخیره می‌شود. در صورت به‌روزرسانی فایل مرجع، کش را پاک کنید.</p>
-          <button onClick={handleClearRef} style={{ padding: "8px 18px", borderRadius: 9, border: `1px solid ${T.border}`, background: "transparent", color: T.text2, fontSize: 12, cursor: "pointer" }}>پاک کردن کش</button>
+          <p style={{ margin: "0 0 10px", fontSize: 13, fontWeight: 600, color: T.text2 }}>ساختار فایل ورودی</p>
+          <p style={{ margin: "0 0 8px", fontSize: 12, color: T.text3, lineHeight: 1.7 }}>ستون‌های مورد انتظار:</p>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+            {["Date","Owner_id","Advertiser_name","Category_level_1","Category_level_2","Team","Account_manager_name","Daily_spend","Total_sessions"].map(col => (
+              <span key={col} style={{ fontSize: 11, color: T.text2, background: T.surface2, border: `1px solid ${T.border}`, padding: "3px 10px", borderRadius: 20, direction: "ltr" }}>{col}</span>
+            ))}
+          </div>
+          <p style={{ margin: "10px 0 0", fontSize: 11, color: T.text3 }}>صنعت و تیم مستقیم از ستون‌های فایل خوانده می‌شود — نیازی به فایل مرجع جداگانه نیست.</p>
         </div>
 
         <div style={card({ padding: "18px 22px" })}>
@@ -1282,7 +1264,7 @@ export default function App() {
     <div style={{ minHeight: "100dvh", background: T.bg, color: T.text1, direction: "rtl", fontFamily: "'Vazirmatn', system-ui, sans-serif" }}>
       <style>{globalStyles}</style>
 
-      <Sidebar screen={screen} setScreen={setScreen} isDark={isDark} setIsDark={setIsDark} hasResult={!!result} session={session} onLogout={handleLogout} refLoading={refLoading} refError={refError} T={T} />
+      <Sidebar screen={screen} setScreen={setScreen} isDark={isDark} setIsDark={setIsDark} hasResult={!!result} session={session} onLogout={handleLogout} T={T} />
 
       <div style={{ marginRight: 80 }}>
         <div style={{ maxWidth: 1100, width: "100%", margin: "0 auto", padding: "40px 40px 100px" }}>
