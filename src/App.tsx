@@ -1,11 +1,14 @@
 import { useState, useCallback, useEffect, useMemo, useRef } from "react";
 import * as XLSX from "xlsx";
+import { TEAMS, ADMIN_USER, type SessionUser } from "./teams";
 
 const MODEL = "anthropic/claude-sonnet-4-5";
 const OPENROUTER_KEY = import.meta.env.VITE_OPENROUTER_KEY as string | undefined;
 const HISTORY_KEY = "analyzer:reported_advertisers";
 const REPORTS_KEY = "analyzer:saved_reports";
 const THEME_KEY = "analyzer:theme";
+const SESSION_KEY = "radar:session";
+const APP_PASSWORD = (import.meta.env.VITE_APP_PASSWORD as string | undefined) || "radar1403";
 
 const DARK = {
   bg: "#0C0C0E", surface: "#141416", surface2: "#1E1E23",
@@ -328,8 +331,117 @@ function DetailModal({ adv, type, T, onClose, onRegen, regenLoading }: { adv: Ad
   );
 }
 
-function Sidebar({ screen, setScreen, isDark, setIsDark, hasResult, T }: {
-  screen: string; setScreen: (s: string) => void; isDark: boolean; setIsDark: (v: boolean) => void; hasResult: boolean; T: Theme;
+// ── Login Page ────────────────────────────────────────────────────────────────
+
+function LoginPage({ T, onLogin }: { T: Theme; onLogin: (u: SessionUser) => void }) {
+  const [selected, setSelected] = useState<SessionUser | null>(null);
+  const [pw, setPw] = useState("");
+  const [err, setErr] = useState("");
+  const [showPw, setShowPw] = useState(false);
+
+  const allUsers: SessionUser[] = [
+    ...TEAMS.map(t => ({ username: t.username, managerFa: t.managerFa, managerEn: t.managerEn, teamFa: t.teamFa, teamEn: t.teamEn, isAdmin: false })),
+    { username: ADMIN_USER.username, managerFa: ADMIN_USER.managerFa, managerEn: ADMIN_USER.managerEn, teamFa: ADMIN_USER.teamFa, teamEn: ADMIN_USER.teamEn, isAdmin: true },
+  ];
+
+  const byDept: Record<string, SessionUser[]> = {};
+  TEAMS.forEach((t, i) => {
+    if (!byDept[t.dept]) byDept[t.dept] = [];
+    byDept[t.dept].push(allUsers[i]);
+  });
+
+  const handleLogin = () => {
+    if (!selected) { setErr("لطفاً نام خود را انتخاب کنید"); return; }
+    if (pw !== APP_PASSWORD) { setErr("رمز عبور اشتباه است"); return; }
+    localStorage.setItem(SESSION_KEY, JSON.stringify({ ...selected, loginAt: Date.now() }));
+    onLogin(selected);
+  };
+
+  const deptColors: Record<string, string> = { "بیزینس": T.coral, "محصول": T.blue, "فروش": T.green, "": T.text3 };
+
+  return (
+    <div style={{ minHeight: "100dvh", background: T.bg, display: "flex", alignItems: "center", justifyContent: "center", padding: 24, direction: "rtl", fontFamily: "'Vazirmatn', system-ui, sans-serif" }}>
+      <style>{`@keyframes fadeUp{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:translateY(0)}} *{box-sizing:border-box}`}</style>
+      <div style={{ width: "100%", maxWidth: 560, animation: "fadeUp 0.3s ease both" }}>
+        {/* Header */}
+        <div style={{ textAlign: "center", marginBottom: 32 }}>
+          <div style={{ width: 52, height: 52, borderRadius: 16, background: T.coral, display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 14px" }}>
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="10" stroke="#fff" strokeWidth="1.5" /><circle cx="12" cy="12" r="6" stroke="#fff" strokeWidth="1" opacity="0.6" /><circle cx="12" cy="12" r="2.5" fill="#fff" /></svg>
+          </div>
+          <h1 style={{ margin: "0 0 6px", fontSize: 24, fontWeight: 700, color: T.text1 }}>Radar</h1>
+          <p style={{ margin: 0, fontSize: 14, color: T.text3 }}>آنالیز رقابتی روزانه یکتانت</p>
+        </div>
+
+        {/* Manager grid */}
+        <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 20, padding: 20, marginBottom: 16 }}>
+          <p style={{ margin: "0 0 14px", fontSize: 12, fontWeight: 600, color: T.text3, textTransform: "uppercase", letterSpacing: "0.08em" }}>نام خود را انتخاب کنید</p>
+          {Object.entries(byDept).map(([dept, users]) => (
+            <div key={dept} style={{ marginBottom: 16 }}>
+              <p style={{ margin: "0 0 8px", fontSize: 11, color: deptColors[dept] || T.text3, fontWeight: 600 }}>{dept}</p>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+                {users.map(u => {
+                  const active = selected?.username === u.username;
+                  return (
+                    <button key={u.username} onClick={() => { setSelected(u); setErr(""); }}
+                      style={{ padding: "8px 14px", borderRadius: 10, border: `1.5px solid ${active ? T.coral : T.border}`, background: active ? T.coralDim : "transparent", color: active ? T.coral : T.text2, fontSize: 13, fontWeight: active ? 600 : 400, cursor: "pointer", transition: "all 0.15s" }}>
+                      {u.managerFa}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          ))}
+          {/* Admin */}
+          <div style={{ borderTop: `1px solid ${T.border}`, paddingTop: 12, marginTop: 4 }}>
+            {(() => {
+              const adminUser = allUsers[allUsers.length - 1];
+              const active = selected?.username === "admin";
+              return (
+                <button onClick={() => { setSelected(adminUser); setErr(""); }}
+                  style={{ padding: "8px 14px", borderRadius: 10, border: `1.5px solid ${active ? T.coral : T.border}`, background: active ? T.coralDim : "transparent", color: active ? T.coral : T.text3, fontSize: 13, fontWeight: active ? 600 : 400, cursor: "pointer", transition: "all 0.15s" }}>
+                  ادمین (همه تیم‌ها)
+                </button>
+              );
+            })()}
+          </div>
+        </div>
+
+        {/* Password */}
+        <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 16, padding: 20 }}>
+          <p style={{ margin: "0 0 10px", fontSize: 12, fontWeight: 600, color: T.text3, textTransform: "uppercase", letterSpacing: "0.08em" }}>رمز عبور</p>
+          <div style={{ display: "flex", gap: 10 }}>
+            <div style={{ flex: 1, position: "relative" }}>
+              <input type={showPw ? "text" : "password"} value={pw} onChange={e => { setPw(e.target.value); setErr(""); }}
+                onKeyDown={e => e.key === "Enter" && handleLogin()}
+                placeholder="رمز عبور را وارد کنید"
+                style={{ width: "100%", fontSize: 14, padding: "11px 14px", paddingLeft: 40, borderRadius: 11, border: `1px solid ${err ? T.danger : T.border}`, background: T.surface2, color: T.text1, outline: "none", direction: "rtl" }} />
+              <button onClick={() => setShowPw(v => !v)}
+                style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)", background: "none", border: "none", cursor: "pointer", color: T.text3, padding: 0, display: "flex" }}>
+                {showPw
+                  ? <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M17.94 17.94A10.07 10.07 0 0112 20c-7 0-11-8-11-8a18.45 18.45 0 015.06-5.94"/><path d="M9.9 4.24A9.12 9.12 0 0112 4c7 0 11 8 11 8a18.5 18.5 0 01-2.16 3.19"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
+                  : <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>}
+              </button>
+            </div>
+            <button onClick={handleLogin}
+              style={{ padding: "11px 22px", borderRadius: 11, border: "none", background: T.coral, color: "#fff", fontSize: 14, fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap" }}>
+              ورود
+            </button>
+          </div>
+          {err && <p style={{ margin: "8px 0 0", fontSize: 12, color: T.danger }}>{err}</p>}
+          {selected && <p style={{ margin: "10px 0 0", fontSize: 12, color: T.text3 }}>
+            ورود به عنوان <span style={{ color: T.coral, fontWeight: 600 }}>{selected.managerFa}</span>
+            {!selected.isAdmin && <span> — تیم {selected.teamFa}</span>}
+          </p>}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Sidebar ───────────────────────────────────────────────────────────────────
+
+function Sidebar({ screen, setScreen, isDark, setIsDark, hasResult, session, onLogout, T }: {
+  screen: string; setScreen: (s: string) => void; isDark: boolean; setIsDark: (v: boolean) => void; hasResult: boolean; session: SessionUser; onLogout: () => void; T: Theme;
 }) {
   const items = [
     { id: "upload", label: "آنالیز", icon: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4" /><polyline points="17 8 12 3 7 8" /><line x1="12" y1="3" x2="12" y2="15" /></svg> },
@@ -353,11 +465,22 @@ function Sidebar({ screen, setScreen, isDark, setIsDark, hasResult, T }: {
         );
       })}
       <div style={{ flex: 1 }} />
+      {/* User avatar */}
+      <div title={`${session.managerFa} — ${session.teamFa}`}
+        style={{ width: 38, height: 38, borderRadius: "50%", background: T.coralDim, border: `1.5px solid ${T.coralBorder}`, display: "flex", alignItems: "center", justifyContent: "center", color: T.coral, fontWeight: 700, fontSize: 13, marginBottom: 6, flexShrink: 0 }}>
+        {session.managerFa.slice(0, 1)}
+      </div>
+      {/* Theme toggle */}
       <button onClick={() => setIsDark(!isDark)} title={isDark ? "حالت روشن" : "حالت تاریک"}
-        style={{ width: 38, height: 38, borderRadius: 10, border: `1px solid ${T.border}`, background: T.surface2, color: T.text2, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", transition: "all 0.18s" }}>
+        style={{ width: 38, height: 38, borderRadius: 10, border: `1px solid ${T.border}`, background: T.surface2, color: T.text2, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", transition: "all 0.18s", marginBottom: 6 }}>
         {isDark
           ? <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="5" /><line x1="12" y1="1" x2="12" y2="3" /><line x1="12" y1="21" x2="12" y2="23" /><line x1="4.22" y1="4.22" x2="5.64" y2="5.64" /><line x1="18.36" y1="18.36" x2="19.78" y2="19.78" /><line x1="1" y1="12" x2="3" y2="12" /><line x1="21" y1="12" x2="23" y2="12" /><line x1="4.22" y1="19.78" x2="5.64" y2="18.36" /><line x1="18.36" y1="5.64" x2="19.78" y2="4.22" /></svg>
           : <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z" /></svg>}
+      </button>
+      {/* Logout */}
+      <button onClick={onLogout} title="خروج"
+        style={{ width: 38, height: 38, borderRadius: 10, border: `1px solid ${T.dangerBorder}`, background: T.dangerBg, color: T.danger, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", transition: "all 0.18s" }}>
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
       </button>
     </div>
   );
@@ -366,6 +489,24 @@ function Sidebar({ screen, setScreen, isDark, setIsDark, hasResult, T }: {
 // ── Main App ──────────────────────────────────────────────────────────────────
 
 export default function App() {
+  const [session, setSession] = useState<SessionUser | null>(() => {
+    try {
+      const raw = localStorage.getItem(SESSION_KEY);
+      if (!raw) return null;
+      const parsed = JSON.parse(raw) as SessionUser & { loginAt?: number };
+      // Expire after 7 days
+      if (parsed.loginAt && Date.now() - parsed.loginAt > 7 * 86400 * 1000) {
+        localStorage.removeItem(SESSION_KEY); return null;
+      }
+      return parsed;
+    } catch { return null; }
+  });
+
+  const handleLogout = () => {
+    localStorage.removeItem(SESSION_KEY);
+    setSession(null);
+  };
+
   const [isDark, setIsDark] = useState(() => {
     try { return localStorage.getItem(THEME_KEY) === "dark"; } catch { return false; }
   });
@@ -871,24 +1012,28 @@ export default function App() {
     </div>
   );
 
+  const globalStyles = `
+    @keyframes radarSweep { to { transform: rotate(360deg); } }
+    @keyframes radarPulse { 0%{transform:scale(1);opacity:0.6} 100%{transform:scale(3.5);opacity:0} }
+    @keyframes dotPop { 0%,100%{opacity:0;transform:scale(0.5)} 30%,70%{opacity:0.9;transform:scale(1)} }
+    @keyframes fadeUp { from{opacity:0;transform:translateY(10px)} to{opacity:1;transform:translateY(0)} }
+    @keyframes slideInModal { from{opacity:0;transform:scale(0.96) translateY(10px)} to{opacity:1;transform:scale(1) translateY(0)} }
+    @keyframes spin { to{transform:rotate(360deg)} }
+    .fade-up { animation: fadeUp 0.22s ease both; }
+    * { box-sizing: border-box; }
+    ::-webkit-scrollbar { width: 5px; height: 5px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: ${T.border}; border-radius: 10px; }
+    select option { background: ${T.surface}; color: ${T.text1}; }
+  `;
+
+  if (!session) return <><style>{globalStyles}</style><LoginPage T={T} onLogin={setSession} /></>;
+
   return (
     <div style={{ minHeight: "100dvh", background: T.bg, color: T.text1, direction: "rtl", fontFamily: "'Vazirmatn', system-ui, sans-serif" }}>
-      <style>{`
-        @keyframes radarSweep { to { transform: rotate(360deg); } }
-        @keyframes radarPulse { 0%{transform:scale(1);opacity:0.6} 100%{transform:scale(3.5);opacity:0} }
-        @keyframes dotPop { 0%,100%{opacity:0;transform:scale(0.5)} 30%,70%{opacity:0.9;transform:scale(1)} }
-        @keyframes fadeUp { from{opacity:0;transform:translateY(10px)} to{opacity:1;transform:translateY(0)} }
-        @keyframes slideInModal { from{opacity:0;transform:scale(0.96) translateY(10px)} to{opacity:1;transform:scale(1) translateY(0)} }
-        @keyframes spin { to{transform:rotate(360deg)} }
-        .fade-up { animation: fadeUp 0.22s ease both; }
-        * { box-sizing: border-box; }
-        ::-webkit-scrollbar { width: 5px; height: 5px; }
-        ::-webkit-scrollbar-track { background: transparent; }
-        ::-webkit-scrollbar-thumb { background: ${T.border}; border-radius: 10px; }
-        select option { background: ${T.surface}; color: ${T.text1}; }
-      `}</style>
+      <style>{globalStyles}</style>
 
-      <Sidebar screen={screen} setScreen={setScreen} isDark={isDark} setIsDark={setIsDark} hasResult={!!result} T={T} />
+      <Sidebar screen={screen} setScreen={setScreen} isDark={isDark} setIsDark={setIsDark} hasResult={!!result} session={session} onLogout={handleLogout} T={T} />
 
       <div style={{ marginRight: 80 }}>
         <div style={{ maxWidth: 1100, width: "100%", margin: "0 auto", padding: "40px 40px 100px" }}>
