@@ -470,11 +470,12 @@ function LoginPage({ T, onLogin }: { T: Theme; onLogin: (u: SessionUser) => void
 
 // ── Sidebar ───────────────────────────────────────────────────────────────────
 
-function Sidebar({ screen, setScreen, isDark, setIsDark, hasResult, session, onLogout, T }: {
-  screen: string; setScreen: (s: string) => void; isDark: boolean; setIsDark: (v: boolean) => void; hasResult: boolean; session: SessionUser; onLogout: () => void; T: Theme;
+function Sidebar({ screen, setScreen, isDark, setIsDark, hasResult, hasCsv, session, onLogout, T }: {
+  screen: string; setScreen: (s: string) => void; isDark: boolean; setIsDark: (v: boolean) => void; hasResult: boolean; hasCsv: boolean; session: SessionUser; onLogout: () => void; T: Theme;
 }) {
   const items = [
     { id: "upload", label: "آنالیز", icon: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4" /><polyline points="17 8 12 3 7 8" /><line x1="12" y1="3" x2="12" y2="15" /></svg> },
+    { id: "dashboard", label: "داشبورد", icon: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><rect x="3" y="3" width="7" height="9" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/><rect x="14" y="12" width="7" height="9" rx="1"/><rect x="3" y="16" width="7" height="5" rx="1"/></svg>, disabled: !hasCsv },
     { id: "results", label: "نتایج", icon: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><rect x="3" y="3" width="7" height="7" rx="1" /><rect x="14" y="3" width="7" height="7" rx="1" /><rect x="3" y="14" width="7" height="7" rx="1" /><rect x="14" y="14" width="7" height="7" rx="1" /></svg>, disabled: !hasResult },
     { id: "reports", label: "گزارش‌ها", icon: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" /><polyline points="14 2 14 8 20 8" /><line x1="16" y1="13" x2="8" y2="13" /><line x1="16" y1="17" x2="8" y2="17" /></svg> },
     { id: "history", label: "تاریخچه", icon: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" /></svg> },
@@ -1240,6 +1241,267 @@ export default function App() {
     </div>
   );
 
+  // ─ Dashboard screen ─────────────────────────────────────────────────────────
+  const DashboardScreen = () => {
+    if (!csvData) return (
+      <div style={{ textAlign: "center", padding: "5rem 2rem", display: "flex", flexDirection: "column", alignItems: "center", gap: 16 }}>
+        <RadarHero T={T} />
+        <p style={{ margin: 0, fontSize: 15, fontWeight: 600, color: T.text1 }}>داشبورد آنالیز رقابتی</p>
+        <p style={{ margin: 0, fontSize: 13, color: T.text3 }}>ابتدا یک فایل XLSX آپلود کنید تا داشبورد فعال شود</p>
+        <button onClick={() => setScreen("upload")} style={{ padding: "10px 24px", borderRadius: 12, border: "none", background: T.coral, color: "#fff", fontSize: 14, fontWeight: 600, cursor: "pointer" }}>رفتن به آنالیز</button>
+      </div>
+    );
+
+    const rows = csvData.rows;
+    const COMP_COLS = ["Tapsell","Deema","Tavoos","Adexo","Chavosh","Aparat","Daart","Yellowadwise","Najva","Triboon","Jaryan","Telewebion","Adverge","Soroush","Soroush_ny","Bale_ny","Rubika_ny","Eitaa_ny","Bazaar","Myket"];
+    const TR_COMP: Record<string, string> = { Tapsell:"تپسل",Deema:"دیما",Tavoos:"طاووس",Adexo:"ادکسو",Chavosh:"چاووش",Aparat:"آپارات",Daart:"دارت",Yellowadwise:"یلو ادوایز",Najva:"نجوا",Triboon:"تریبون",Jaryan:"جریان",Telewebion:"تلوبیون",Adverge:"ادورج",Soroush:"سروش",Soroush_ny:"سروش",Bale_ny:"بله",Rubika_ny:"روبیکا",Eitaa_ny:"ایتا",Bazaar:"بازار",Myket:"مایکت" };
+
+    // Unique advertisers by Owner_id
+    const advSet = new Map<string, { name: string; industry: string; team: string; am: string; pm: string; sup: string; sessions: number; ykt: number; spend: number; comps: Record<string,number> }>();
+    rows.forEach(r => {
+      const id = (r.Owner_id || r.Advertiser_name || "").trim();
+      if (!id) return;
+      const cur = advSet.get(id) || { name: r.Advertiser_name || id, industry: r.Category_level_1 || "", team: r.Team || "", am: r.Account_manager_name || "", pm: r.Performance_manager_name || "", sup: r.Supervisor_name || "", sessions: 0, ykt: 0, spend: 0, comps: {} };
+      cur.sessions += Number(r.Total_sessions) || 0;
+      cur.ykt += Number(r.Yektanet) || 0;
+      cur.spend += Number(r.Daily_spend) || 0;
+      COMP_COLS.forEach(c => { cur.comps[c] = (cur.comps[c] || 0) + (Number(r[c]) || 0); });
+      advSet.set(id, cur);
+    });
+    const advList = [...advSet.values()];
+
+    // KPIs
+    const totalSessions = advList.reduce((s, a) => s + a.sessions, 0);
+    const totalYkt = advList.reduce((s, a) => s + a.ykt, 0);
+    const yktShare = totalSessions > 0 ? Math.round(totalYkt / totalSessions * 100) : 0;
+    const totalSpend = advList.reduce((s, a) => s + a.spend, 0);
+    const dates = [...new Set(rows.map(r => r.Date || r.date).filter(Boolean))];
+
+    // Competitor totals
+    const compTotals = COMP_COLS.map(col => ({
+      col, name: TR_COMP[col] || col,
+      total: advList.reduce((s, a) => s + (a.comps[col] || 0), 0),
+    })).filter(c => c.total > 0).sort((a, b) => b.total - a.total).slice(0, 10);
+    const compMax = compTotals[0]?.total || 1;
+
+    // Industry breakdown (by unique advertiser)
+    const indMap = new Map<string, { sessions: number; ykt: number; count: number }>();
+    advList.forEach(a => {
+      const ind = a.industry || "سایر";
+      const cur = indMap.get(ind) || { sessions: 0, ykt: 0, count: 0 };
+      cur.sessions += a.sessions; cur.ykt += a.ykt; cur.count++;
+      indMap.set(ind, cur);
+    });
+    const indStats = [...indMap.entries()].map(([name, { sessions, ykt, count }]) => ({
+      name, count, sessions,
+      yktShare: sessions > 0 ? Math.round(ykt / sessions * 100) : 0,
+    })).sort((a, b) => b.sessions - a.sessions);
+
+    // AM performance
+    const amMap = new Map<string, { sessions: number; ykt: number; accounts: number; spend: number }>();
+    advList.forEach(a => {
+      if (!a.am) return;
+      const cur = amMap.get(a.am) || { sessions: 0, ykt: 0, accounts: 0, spend: 0 };
+      cur.sessions += a.sessions; cur.ykt += a.ykt; cur.accounts++; cur.spend += a.spend;
+      amMap.set(a.am, cur);
+    });
+    const amStats = [...amMap.entries()].map(([name, d]) => ({
+      name, accounts: d.accounts,
+      yktShare: d.sessions > 0 ? Math.round(d.ykt / d.sessions * 100) : 0,
+      sessions: d.sessions, spend: d.spend,
+    })).sort((a, b) => b.accounts - a.accounts);
+
+    // Team performance
+    const teamMap = new Map<string, { sessions: number; ykt: number; accounts: number }>();
+    advList.forEach(a => {
+      if (!a.team) return;
+      const cur = teamMap.get(a.team) || { sessions: 0, ykt: 0, accounts: 0 };
+      cur.sessions += a.sessions; cur.ykt += a.ykt; cur.accounts++;
+      teamMap.set(a.team, cur);
+    });
+    const teamStats = [...teamMap.entries()].map(([name, d]) => ({
+      name, accounts: d.accounts,
+      yktShare: d.sessions > 0 ? Math.round(d.ykt / d.sessions * 100) : 0,
+    })).sort((a, b) => b.accounts - a.accounts);
+
+    // At-risk: ykt share < 35%, sessions > 5000
+    const atRisk = advList.filter(a => a.sessions > 5000)
+      .map(a => ({ ...a, yktShare: a.sessions > 0 ? Math.round(a.ykt / a.sessions * 100) : 0 }))
+      .filter(a => a.yktShare > 0 && a.yktShare < 35)
+      .sort((a, b) => b.sessions - a.sessions).slice(0, 8);
+
+    // Opportunities: zero ykt, significant sessions
+    const opportunities = advList.filter(a => a.ykt === 0 && a.sessions > 2000)
+      .sort((a, b) => b.sessions - a.sessions).slice(0, 8);
+
+    const yktColor = yktShare >= 50 ? T.coral : yktShare >= 30 ? T.amber : T.danger;
+
+    return (
+      <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+          <div>
+            <p style={{ margin: "0 0 2px", fontSize: 18, fontWeight: 700, color: T.text1 }}>داشبورد رقابتی</p>
+            <p style={{ margin: 0, fontSize: 12, color: T.text3 }}>{advList.length} آگهی‌دهنده · {dates.length} روز داده · {csvData.name}</p>
+          </div>
+          <button onClick={() => setScreen("upload")} style={{ padding: "8px 18px", borderRadius: 10, border: `1px solid ${T.coralBorder}`, background: T.coralDim, color: T.coral, fontSize: 12, fontWeight: 600, cursor: "pointer" }}>شروع آنالیز AI</button>
+        </div>
+
+        {/* KPI row */}
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(180px, 1fr))", gap: 12 }}>
+          {[
+            { label: "آگهی‌دهندگان", value: advList.length.toLocaleString(), color: T.text1 },
+            { label: "کل سشن‌ها", value: formatNumber(totalSessions), color: T.text1 },
+            { label: "سهم یکتانت", value: `${yktShare}٪`, color: yktColor },
+            { label: "روزهای داده", value: dates.length, color: T.blue },
+            { label: "بودجه یکتانت (M)", value: totalSpend > 0 ? `${(totalSpend / 1000000).toFixed(0)}M` : "—", color: T.green },
+            { label: "در معرض خطر", value: atRisk.length, color: T.amber },
+          ].map((kpi, i) => (
+            <div key={i} style={card({ padding: "16px 18px" })}>
+              <p style={{ margin: "0 0 6px", fontSize: 11, color: T.text3 }}>{kpi.label}</p>
+              <p style={{ margin: 0, fontSize: 24, fontWeight: 700, color: kpi.color, direction: "ltr", textAlign: "right" }}>{kpi.value}</p>
+            </div>
+          ))}
+        </div>
+
+        {/* Competitive landscape */}
+        <div style={card({ padding: "18px 22px" })}>
+          <p style={{ margin: "0 0 4px", fontSize: 14, fontWeight: 700, color: T.text1 }}>چشم‌انداز رقبا</p>
+          <p style={{ margin: "0 0 16px", fontSize: 12, color: T.text3 }}>مقایسه کل سشن‌های جذب‌شده در بازار تبلیغات دیجیتال</p>
+          <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              <span style={{ fontSize: 12, color: T.text1, fontWeight: 600, minWidth: 90, textAlign: "right" }}>یکتانت ●</span>
+              <div style={{ flex: 1, height: 24, borderRadius: 7, background: T.border, overflow: "hidden" }}>
+                <div style={{ height: "100%", width: `${Math.round(totalYkt / compMax * 100)}%`, background: T.coral, borderRadius: 7, minWidth: 4 }} />
+              </div>
+              <span style={{ fontSize: 11, color: T.text2, minWidth: 60, textAlign: "left", direction: "ltr" }}>{formatNumber(totalYkt)}</span>
+            </div>
+            {compTotals.map((c, i) => (
+              <div key={i} style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                <span style={{ fontSize: 12, color: T.text2, minWidth: 90, textAlign: "right" }}>{c.name}</span>
+                <div style={{ flex: 1, height: 24, borderRadius: 7, background: T.border, overflow: "hidden" }}>
+                  <div style={{ height: "100%", width: `${Math.round(c.total / compMax * 100)}%`, background: AGENCY_COLORS[c.name] || T.text3, borderRadius: 7, minWidth: 2 }} />
+                </div>
+                <span style={{ fontSize: 11, color: T.text3, minWidth: 60, textAlign: "left", direction: "ltr" }}>{formatNumber(c.total)}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Industry + Team in 2 columns */}
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(380px, 1fr))", gap: 16 }}>
+          <div style={card({ padding: "18px 22px" })}>
+            <p style={{ margin: "0 0 4px", fontSize: 14, fontWeight: 700, color: T.text1 }}>تفکیک صنعت</p>
+            <p style={{ margin: "0 0 14px", fontSize: 12, color: T.text3 }}>میانگین سهم یکتانت به تفکیک صنعت</p>
+            <div style={{ display: "flex", flexDirection: "column", gap: 9 }}>
+              {indStats.filter(s => s.name !== "سایر").slice(0, 10).map((s, i) => {
+                const c = s.yktShare >= 50 ? T.coral : s.yktShare >= 30 ? T.amber : T.danger;
+                return (
+                  <div key={i}>
+                    <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
+                      <span style={{ fontSize: 12, color: T.text2 }}>{s.name} <span style={{ color: T.text3, fontSize: 11 }}>({s.count})</span></span>
+                      <span style={{ fontSize: 12, fontWeight: 700, color: c }}>{s.yktShare}٪</span>
+                    </div>
+                    <div style={{ height: 5, borderRadius: 3, background: T.border, overflow: "hidden" }}>
+                      <div style={{ height: "100%", width: `${s.yktShare}%`, background: c, borderRadius: 3 }} />
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          {teamStats.length > 0 && (
+            <div style={card({ padding: "18px 22px" })}>
+              <p style={{ margin: "0 0 4px", fontSize: 14, fontWeight: 700, color: T.text1 }}>عملکرد تیم‌ها</p>
+              <p style={{ margin: "0 0 14px", fontSize: 12, color: T.text3 }}>سهم یکتانت و تعداد اکانت به تفکیک تیم</p>
+              <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                {teamStats.map((t, i) => {
+                  const c = t.yktShare >= 50 ? T.coral : t.yktShare >= 30 ? T.amber : T.danger;
+                  return (
+                    <div key={i} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 12px", borderRadius: 9, background: T.surface2 }}>
+                      <div style={{ flex: 1 }}>
+                        <p style={{ margin: "0 0 3px", fontSize: 12, color: T.text1, fontWeight: 500 }}>{t.name}</p>
+                        <div style={{ height: 4, borderRadius: 2, background: T.border, overflow: "hidden" }}>
+                          <div style={{ height: "100%", width: `${t.yktShare}%`, background: c, borderRadius: 2 }} />
+                        </div>
+                      </div>
+                      <span style={{ fontSize: 11, color: T.text3, flexShrink: 0 }}>{t.accounts} اکانت</span>
+                      <span style={{ fontSize: 13, fontWeight: 700, color: c, flexShrink: 0 }}>{t.yktShare}٪</span>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* AM Leaderboard */}
+        {amStats.length > 0 && (
+          <div style={card({ padding: "18px 22px" })}>
+            <p style={{ margin: "0 0 4px", fontSize: 14, fontWeight: 700, color: T.text1 }}>عملکرد اکانت منیجرها</p>
+            <p style={{ margin: "0 0 14px", fontSize: 12, color: T.text3 }}>سهم یکتانت، تعداد اکانت و حجم بودجه به تفکیک AM</p>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: 8 }}>
+              {amStats.slice(0, 12).map((am, i) => {
+                const c = am.yktShare >= 50 ? T.coral : am.yktShare >= 30 ? T.amber : T.danger;
+                return (
+                  <div key={i} style={{ padding: "10px 14px", borderRadius: 10, background: T.surface2, border: `1px solid ${T.border}`, display: "flex", alignItems: "center", gap: 10 }}>
+                    <div style={{ width: 32, height: 32, borderRadius: "50%", background: T.surface, border: `2px solid ${c}`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 13, fontWeight: 700, color: c, flexShrink: 0 }}>{am.name.slice(0, 1)}</div>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <p style={{ margin: "0 0 2px", fontSize: 12, color: T.text1, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{am.name}</p>
+                      <p style={{ margin: 0, fontSize: 10, color: T.text3 }}>{am.accounts} اکانت · {formatNumber(am.sessions)} سشن</p>
+                    </div>
+                    <span style={{ fontSize: 15, fontWeight: 700, color: c, flexShrink: 0 }}>{am.yktShare}٪</span>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* At-Risk + Opportunities */}
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(380px, 1fr))", gap: 16 }}>
+          {atRisk.length > 0 && (
+            <div style={card({ padding: "18px 22px" })}>
+              <p style={{ margin: "0 0 4px", fontSize: 14, fontWeight: 700, color: T.amber }}>⚠ اکانت‌های در معرض خطر</p>
+              <p style={{ margin: "0 0 14px", fontSize: 12, color: T.text3 }}>حجم سشن بالا + سهم یکتانت زیر ۳۵٪</p>
+              <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
+                {atRisk.map((a, i) => (
+                  <div key={i} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 12px", borderRadius: 9, background: T.amberDim, border: `1px solid ${T.amberBorder}` }}>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <p style={{ margin: "0 0 1px", fontSize: 12, color: T.text1, direction: "ltr", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{a.name}</p>
+                      <p style={{ margin: 0, fontSize: 10, color: T.text3 }}>{a.industry}{a.am ? ` · ${a.am}` : ""}</p>
+                    </div>
+                    <span style={{ fontSize: 11, color: T.text3, flexShrink: 0 }}>{formatNumber(a.sessions)}</span>
+                    <span style={{ fontSize: 14, fontWeight: 700, color: T.amber, flexShrink: 0 }}>{a.yktShare}٪</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {opportunities.length > 0 && (
+            <div style={card({ padding: "18px 22px" })}>
+              <p style={{ margin: "0 0 4px", fontSize: 14, fontWeight: 700, color: T.green }}>◎ فرصت‌های جدید</p>
+              <p style={{ margin: "0 0 14px", fontSize: 12, color: T.text3 }}>سهم یکتانت صفر + حجم سشن بالا — احتمال لید</p>
+              <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
+                {opportunities.map((a, i) => (
+                  <div key={i} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 12px", borderRadius: 9, background: T.greenDim, border: `1px solid ${T.greenBorder}` }}>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <p style={{ margin: "0 0 1px", fontSize: 12, color: T.text1, direction: "ltr", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{a.name}</p>
+                      <p style={{ margin: 0, fontSize: 10, color: T.text3 }}>{a.industry}{a.am ? ` · ${a.am}` : ""}</p>
+                    </div>
+                    <span style={{ fontSize: 11, color: T.text3, flexShrink: 0 }}>{formatNumber(a.sessions)}</span>
+                    <span style={{ fontSize: 11, color: T.green, fontWeight: 600, flexShrink: 0 }}>لید</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  };
+
   // ─ Settings screen ───────────────────────────────────────────────────────────
   const SettingsScreen = () => {
     const [localKey, setLocalKey] = useState(apiKeyInput);
@@ -1302,6 +1564,7 @@ export default function App() {
     ::-webkit-scrollbar-track { background: transparent; }
     ::-webkit-scrollbar-thumb { background: ${T.border}; border-radius: 10px; }
     select option { background: ${T.surface}; color: ${T.text1}; }
+    html, body { overflow-y: auto; overflow-x: hidden; }
     button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible { outline: 2px solid ${T.coral}; outline-offset: 2px; border-radius: 4px; }
     [role="button"]:focus-visible { outline: 2px solid ${T.coral}; outline-offset: 2px; border-radius: 12px; }
   `;
@@ -1309,14 +1572,15 @@ export default function App() {
   if (!session) return <><style>{globalStyles}</style><LoginPage T={T} onLogin={setSession} /></>;
 
   return (
-    <div style={{ minHeight: "100dvh", background: T.bg, color: T.text1, direction: "rtl", fontFamily: "'Vazirmatn', system-ui, sans-serif" }}>
+    <div style={{ minHeight: "100dvh", background: T.bg, color: T.text1, direction: "rtl", fontFamily: "'Vazirmatn', system-ui, sans-serif", overflowX: "hidden" }}>
       <style>{globalStyles}</style>
 
-      <Sidebar screen={screen} setScreen={setScreen} isDark={isDark} setIsDark={setIsDark} hasResult={!!result} session={session} onLogout={handleLogout} T={T} />
+      <Sidebar screen={screen} setScreen={setScreen} isDark={isDark} setIsDark={setIsDark} hasResult={!!result} hasCsv={!!csvData} session={session} onLogout={handleLogout} T={T} />
 
       <div style={{ marginRight: 80 }}>
         <div style={{ maxWidth: 1100, width: "100%", margin: "0 auto", padding: "40px 40px 100px" }}>
           {screen === "upload" && <UploadScreen />}
+          {screen === "dashboard" && <DashboardScreen />}
           {screen === "results" && <ResultsScreen />}
           {screen === "reports" && <ReportsScreen />}
           {screen === "history" && <HistoryScreen />}
