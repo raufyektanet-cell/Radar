@@ -184,7 +184,13 @@ function parseAgencies(str: string): Agency[] {
   return str.split(",").map(s => { const [k, v] = s.trim().split(":"); const name = TR[k?.trim()] || k?.trim() || ""; return { name, value: parseInt(v) || 0, color: AGENCY_COLORS[name] || "#999" }; }).filter(a => a.name && a.value > 0);
 }
 
-interface Advertiser { name: string; ownerid: string; manager: string; summary?: string; note?: string; agencies: Agency[]; industry1?: string; industry2?: string; }
+function formatNumber(n: number): string {
+  if (n >= 1000000) return `${(n / 1000000).toFixed(1)}M`;
+  if (n >= 1000) return `${Math.round(n / 1000)}K`;
+  return String(n);
+}
+
+interface Advertiser { name: string; ownerid: string; manager: string; performanceManager?: string; supervisor?: string; team?: string; summary?: string; note?: string; agencies: Agency[]; industry1?: string; industry2?: string; }
 interface Competitor { platform: string; newclients: string; topclients: string; note: string; }
 interface AnalysisResult { dateLabel: string; advertisers: Advertiser[]; leads: Advertiser[]; competitors: Competitor[]; market: string; disclaimer: string; id?: string; savedAt?: number; }
 interface HistoryEntry { date: string; dateLabel: string; names: string[]; }
@@ -332,9 +338,17 @@ function DetailModal({ adv, type, T, onClose, onRegen, regenLoading }: { adv: Ad
           </div>
         )}
         {(adv.industry1 || adv.industry2) && (
-          <div style={{ display: "flex", gap: 8, marginBottom: 14, flexWrap: "wrap" }}>
+          <div style={{ display: "flex", gap: 8, marginBottom: 10, flexWrap: "wrap" }}>
             {adv.industry1 && <span style={{ fontSize: 12, color: T.blue, background: T.blueDim, padding: "4px 12px", borderRadius: 20, border: `1px solid rgba(74,158,232,0.2)` }}>{adv.industry1}</span>}
             {adv.industry2 && <span style={{ fontSize: 12, color: T.text3, background: T.surface2, padding: "4px 12px", borderRadius: 20, border: `1px solid ${T.border}` }}>{adv.industry2}</span>}
+          </div>
+        )}
+        {(adv.team || adv.manager || adv.performanceManager || adv.supervisor) && (
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 14 }}>
+            {adv.team && <div style={{ padding: "8px 12px", borderRadius: 10, background: T.surface2, border: `1px solid ${T.border}` }}><p style={{ margin: "0 0 2px", fontSize: 10, color: T.text3 }}>تیم</p><p style={{ margin: 0, fontSize: 12, fontWeight: 600, color: T.text1 }}>{adv.team}</p></div>}
+            {adv.manager && <div style={{ padding: "8px 12px", borderRadius: 10, background: T.surface2, border: `1px solid ${T.border}` }}><p style={{ margin: "0 0 2px", fontSize: 10, color: T.text3 }}>اکانت منیجر</p><p style={{ margin: 0, fontSize: 12, fontWeight: 600, color: T.coral }}>{adv.manager}</p></div>}
+            {adv.performanceManager && <div style={{ padding: "8px 12px", borderRadius: 10, background: T.surface2, border: `1px solid ${T.border}` }}><p style={{ margin: "0 0 2px", fontSize: 10, color: T.text3 }}>پرفورمنس منیجر</p><p style={{ margin: 0, fontSize: 12, fontWeight: 600, color: T.blue }}>{adv.performanceManager}</p></div>}
+            {adv.supervisor && <div style={{ padding: "8px 12px", borderRadius: 10, background: T.surface2, border: `1px solid ${T.border}` }}><p style={{ margin: "0 0 2px", fontSize: 10, color: T.text3 }}>سوپروایزر</p><p style={{ margin: 0, fontSize: 12, fontWeight: 600, color: T.amber }}>{adv.supervisor}</p></div>}
           </div>
         )}
         <div style={{ background: T.surface2, borderRadius: 12, padding: "14px 16px" }}>
@@ -645,22 +659,36 @@ export default function App() {
     }
     setRawDebug(raw);
     if (!raw || raw.length < 5) throw new Error("پاسخ خالی از API");
-    // Build industry ref map from the uploaded CSV rows directly
-    const localRef = new Map<string, { industry1: string; industry2: string }>();
+    // Build ref map from uploaded CSV rows — includes industry + all personnel fields
+    type LocalRef = { industry1: string; industry2: string; team: string; accountManager: string; performanceManager: string; supervisor: string; };
+    const localRef = new Map<string, LocalRef>();
+    const nameRef = new Map<string, LocalRef>();
     rows.forEach(r => {
       const id = String(r.Owner_id || r.owner_id || "").trim();
-      if (!id) return;
-      localRef.set(id, {
+      const entry: LocalRef = {
         industry1: r.Category_level_1 || r.industry_tag_1 || "",
         industry2: r.Category_level_2 || r.industry_tag_2 || "",
-      });
+        team: r.Team || "",
+        accountManager: r.Account_manager_name || r.account_manager_name || "",
+        performanceManager: r.Performance_manager_name || "",
+        supervisor: r.Supervisor_name || "",
+      };
+      if (id) localRef.set(id, entry);
+      const name = (r.Advertiser_name || r.owner_name || "").trim();
+      if (name && !nameRef.has(name)) nameRef.set(name, entry);
     });
-    const enrichIndustry = (ownerid: string) => {
-      const ref = localRef.get(ownerid);
-      return { industry1: ref?.industry1 || "", industry2: ref?.industry2 || "" };
+    const enrich = (ownerid: string, name?: string): Partial<Advertiser> => {
+      const ref = localRef.get(ownerid) || (name ? nameRef.get(name) : undefined);
+      return {
+        industry1: ref?.industry1 || "",
+        industry2: ref?.industry2 || "",
+        team: ref?.team || "",
+        performanceManager: ref?.performanceManager || "",
+        supervisor: ref?.supervisor || "",
+      };
     };
-    const advertisers = extractBlocks("ADVERTISER", raw).map(b => { const f = parseFields(b); const n = f.NAME || ""; const id = f.OWNERID || ""; return { name: n, ownerid: id, manager: managerMap[n] || "", summary: f.SUMMARY || "", agencies: parseAgencies(f.AGENCIES), ...enrichIndustry(id) }; });
-    const leads = extractBlocks("LEAD", raw).map(b => { const f = parseFields(b); const n = f.NAME || ""; const id = f.OWNERID || ""; return { name: n, ownerid: id, manager: managerMap[n] || "", note: f.NOTE || "", agencies: parseAgencies(f.AGENCIES), ...enrichIndustry(id) }; });
+    const advertisers = extractBlocks("ADVERTISER", raw).map(b => { const f = parseFields(b); const n = f.NAME || ""; const id = f.OWNERID || ""; const ex = enrich(id, n); return { name: n, ownerid: id, manager: managerMap[n] || ex.team || "", summary: f.SUMMARY || "", agencies: parseAgencies(f.AGENCIES), ...ex }; });
+    const leads = extractBlocks("LEAD", raw).map(b => { const f = parseFields(b); const n = f.NAME || ""; const id = f.OWNERID || ""; const ex = enrich(id, n); return { name: n, ownerid: id, manager: managerMap[n] || "", note: f.NOTE || "", agencies: parseAgencies(f.AGENCIES), ...ex }; });
     const competitors = extractBlocks("COMPETITOR", raw).map(b => { const f = parseFields(b); return { platform: f.PLATFORM || "", newclients: f.NEWCLIENTS || "", topclients: f.TOPCLIENTS || "", note: f.NOTE || "" }; });
     const market = (extractBlocks("MARKET", raw)[0] || "").trim();
     const disclaimer = (extractBlocks("DISCLAIMER", raw)[0] || "داده‌ها بر اساس کراول وب هستن و تخمینی‌اند — روندها قابل اعتمادند اما اعداد دقیق نیستن.").trim();
@@ -683,17 +711,29 @@ export default function App() {
 
   const filterRowsByManager = (rows: Record<string, string>[]): Record<string, string>[] => {
     if (!session || session.isAdmin) return rows;
-    // Match Team column against Persian team name first
-    const byTeamFa = rows.filter(r => (r.Team || r.manager_team || "").trim() === session.teamFa);
-    if (byTeamFa.length > 0) return byTeamFa;
-    // Fallback: case-insensitive English team name partial match
-    const teamEn = session.teamEn.toLowerCase();
-    const byTeamEn = rows.filter(r => (r.Team || r.manager_team || "").toLowerCase().includes(teamEn));
-    if (byTeamEn.length > 0) return byTeamEn;
-    // Fallback: match by account manager last name
+    const fa = session.managerFa.trim();
+    // Primary: match rows where user appears as AM, PM, or Supervisor by Persian name
+    const byRole = rows.filter(r => {
+      const am = (r.Account_manager_name || "").trim();
+      const pm = (r.Performance_manager_name || "").trim();
+      const sup = (r.Supervisor_name || "").trim();
+      return am === fa || pm === fa || sup === fa;
+    });
+    if (byRole.length > 0) return byRole;
+    // Fallback: English last name partial match across all three role columns
     const lastName = session.managerEn.split(" ").pop()?.toLowerCase() || "";
-    const byName = rows.filter(r => (r.Account_manager_name || r.account_manager_name || "").toLowerCase().includes(lastName));
-    return byName.length > 0 ? byName : rows;
+    if (lastName) {
+      const byName = rows.filter(r => {
+        const am = (r.Account_manager_name || "").toLowerCase();
+        const pm = (r.Performance_manager_name || "").toLowerCase();
+        const sup = (r.Supervisor_name || "").toLowerCase();
+        return am.includes(lastName) || pm.includes(lastName) || sup.includes(lastName);
+      });
+      if (byName.length > 0) return byName;
+    }
+    // Last resort: team-based
+    const byTeamFa = rows.filter(r => (r.Team || "").trim() === session.teamFa);
+    return byTeamFa.length > 0 ? byTeamFa : rows;
   };
 
   const analyze = async () => {
@@ -778,7 +818,15 @@ export default function App() {
             <span style={{ fontSize: 11, color: T.text3 }}>#{adv.ownerid}</span>
             {adv.manager && <span style={{ fontSize: 11, color: accent, background: accentDim, border: `1px solid ${accentBorder}`, padding: "1px 8px", borderRadius: 20 }}>{adv.manager}</span>}
             {adv.industry1 && <span style={{ fontSize: 10, color: T.blue, background: T.blueDim, padding: "1px 7px", borderRadius: 20, border: `1px solid rgba(74,158,232,0.2)` }}>{adv.industry1}</span>}
+            {adv.industry2 && <span style={{ fontSize: 10, color: T.text3, background: T.surface2, padding: "1px 7px", borderRadius: 20, border: `1px solid ${T.border}` }}>{adv.industry2}</span>}
           </div>
+          {(adv.team || adv.performanceManager || adv.supervisor) && (
+            <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 5 }}>
+              {adv.team && <span style={{ fontSize: 10, color: T.text3, background: T.surface2, border: `1px solid ${T.border}`, padding: "1px 8px", borderRadius: 20 }}>تیم: {adv.team}</span>}
+              {adv.performanceManager && <span style={{ fontSize: 10, color: T.text3, background: T.surface2, border: `1px solid ${T.border}`, padding: "1px 8px", borderRadius: 20 }}>PM: {adv.performanceManager}</span>}
+              {adv.supervisor && <span style={{ fontSize: 10, color: T.text3, background: T.surface2, border: `1px solid ${T.border}`, padding: "1px 8px", borderRadius: 20 }}>سوپروایزر: {adv.supervisor}</span>}
+            </div>
+          )}
           <p style={{ margin: "0 0 8px", fontSize: 12, color: T.text2, lineHeight: 1.7, display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>
             {type === "lead" ? adv.note : adv.summary}
           </p>
