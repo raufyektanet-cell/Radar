@@ -324,7 +324,7 @@ function DetailModal({ adv, type, T, onClose, onRegen, regenLoading }: { adv: Ad
   }, [onClose]);
   const total = adv.agencies.reduce((s, a) => s + a.value, 0);
   return (
-    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", zIndex: 500, display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }} onClick={onClose}>
+    <div role="dialog" aria-modal="true" aria-label={`جزئیات ${adv.name}`} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", zIndex: 500, display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }} onClick={onClose}>
       <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 20, padding: "24px 28px", width: "100%", maxWidth: 480, animation: "slideInModal 0.22s ease both", direction: "rtl" }} onClick={e => e.stopPropagation()}>
         <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: 20 }}>
           <div>
@@ -332,11 +332,11 @@ function DetailModal({ adv, type, T, onClose, onRegen, regenLoading }: { adv: Ad
             <div style={{ fontSize: 12, color: T.text3, marginTop: 3, direction: "ltr" }}>#{adv.ownerid}{adv.manager ? ` · ` : ""}{adv.manager && <span style={{ color: T.coral }}>{adv.manager}</span>}</div>
           </div>
           <div style={{ display: "flex", gap: 8 }}>
-            <button onClick={onRegen} disabled={regenLoading} style={{ padding: "6px 12px", borderRadius: 8, border: `1px solid ${T.border}`, background: "transparent", color: T.text2, fontSize: 12, cursor: "pointer", display: "flex", alignItems: "center", gap: 5 }}>
+            <button onClick={onRegen} disabled={regenLoading} aria-label="بازسازی تحلیل" style={{ padding: "6px 12px", borderRadius: 8, border: `1px solid ${T.border}`, background: "transparent", color: T.text2, fontSize: 12, cursor: "pointer", display: "flex", alignItems: "center", gap: 5 }}>
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={regenLoading ? { animation: "spin 0.8s linear infinite" } : {}}><polyline points="23 4 23 10 17 10" /><path d="M20.49 15a9 9 0 11-2.12-9.36L23 10" /></svg>
               بازسازی
             </button>
-            <button onClick={onClose} style={{ width: 32, height: 32, borderRadius: 8, border: `1px solid ${T.border}`, background: "transparent", color: T.text3, cursor: "pointer", fontSize: 18, lineHeight: 1, display: "flex", alignItems: "center", justifyContent: "center" }}>×</button>
+            <button onClick={onClose} aria-label="بستن" style={{ width: 40, height: 40, borderRadius: 8, border: `1px solid ${T.border}`, background: "transparent", color: T.text3, cursor: "pointer", fontSize: 20, lineHeight: 1, display: "flex", alignItems: "center", justifyContent: "center" }}>×</button>
           </div>
         </div>
         {total > 0 && (
@@ -450,8 +450,8 @@ function LoginPage({ T, onLogin }: { T: Theme; onLogin: (u: SessionUser) => void
                 onKeyDown={e => e.key === "Enter" && handleLogin()}
                 placeholder="رمز عبور را وارد کنید"
                 style={{ width: "100%", fontSize: 14, padding: "11px 14px", paddingLeft: 40, borderRadius: 11, border: `1px solid ${err ? T.danger : T.border}`, background: T.surface2, color: T.text1, outline: "none", direction: "rtl" }} />
-              <button onClick={() => setShowPw(v => !v)}
-                style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)", background: "none", border: "none", cursor: "pointer", color: T.text3, padding: 0, display: "flex" }}>
+              <button onClick={() => setShowPw(v => !v)} aria-label={showPw ? "مخفی کردن رمز عبور" : "نمایش رمز عبور"}
+                style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)", background: "none", border: "none", cursor: "pointer", color: T.text3, padding: 4, display: "flex", minWidth: 32, minHeight: 32, alignItems: "center", justifyContent: "center" }}>
                 {showPw
                   ? <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M17.94 17.94A10.07 10.07 0 0112 20c-7 0-11-8-11-8a18.45 18.45 0 015.06-5.94"/><path d="M9.9 4.24A9.12 9.12 0 0112 4c7 0 11 8 11 8a18.5 18.5 0 01-2.16 3.19"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
                   : <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>}
@@ -483,6 +483,7 @@ function Sidebar({ screen, setScreen, isDark, setIsDark, hasResult, session, onL
     { id: "results", label: "نتایج", icon: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><rect x="3" y="3" width="7" height="7" rx="1" /><rect x="14" y="3" width="7" height="7" rx="1" /><rect x="3" y="14" width="7" height="7" rx="1" /><rect x="14" y="14" width="7" height="7" rx="1" /></svg>, disabled: !hasResult },
     { id: "reports", label: "گزارش‌ها", icon: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" /><polyline points="14 2 14 8 20 8" /><line x1="16" y1="13" x2="8" y2="13" /><line x1="16" y1="17" x2="8" y2="17" /></svg> },
     { id: "history", label: "تاریخچه", icon: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" /></svg> },
+    { id: "settings", label: "تنظیمات", icon: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z" /></svg> },
   ];
   return (
     <div style={{ position: "fixed", right: 0, top: 0, bottom: 0, width: 80, background: T.surface, borderLeft: `1px solid ${T.border}`, display: "flex", flexDirection: "column", alignItems: "center", paddingTop: 20, paddingBottom: 20, zIndex: 200, gap: 2 }}>
@@ -492,7 +493,7 @@ function Sidebar({ screen, setScreen, isDark, setIsDark, hasResult, session, onL
       {items.map(item => {
         const active = screen === item.id;
         return (
-          <button key={item.id} onClick={() => !item.disabled && setScreen(item.id)} title={item.label}
+          <button key={item.id} onClick={() => !item.disabled && setScreen(item.id)} title={item.label} aria-label={item.label} aria-current={active ? "page" : undefined}
             style={{ width: 48, height: 48, borderRadius: 13, border: "none", cursor: item.disabled ? "default" : "pointer", background: active ? T.coralDim : "transparent", color: active ? T.coral : item.disabled ? T.text3 : T.text2, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 3, transition: "all 0.18s", opacity: item.disabled ? 0.4 : 1 }}>
             {item.icon}
             <span style={{ fontSize: 8.5, fontWeight: active ? 600 : 400, letterSpacing: "0.01em" }}>{item.label}</span>
@@ -504,20 +505,20 @@ function Sidebar({ screen, setScreen, isDark, setIsDark, hasResult, session, onL
       <div title={refLoading ? "در حال بارگذاری اطلاعات..." : refError ? "خطا در بارگذاری اطلاعات" : "اطلاعات بارگذاری شد"}
         style={{ width: 8, height: 8, borderRadius: "50%", background: refLoading ? T.amber : refError ? T.danger : T.green, marginBottom: 10, flexShrink: 0, animation: refLoading ? "radarPulse 1.5s ease-out infinite" : "none" }} />
       {/* User avatar */}
-      <div title={`${session.managerFa} — ${session.teamFa}`}
-        style={{ width: 38, height: 38, borderRadius: "50%", background: T.coralDim, border: `1.5px solid ${T.coralBorder}`, display: "flex", alignItems: "center", justifyContent: "center", color: T.coral, fontWeight: 700, fontSize: 13, marginBottom: 6, flexShrink: 0 }}>
+      <div title={`${session.managerFa} — ${session.teamFa}`} aria-label={`کاربر: ${session.managerFa}`} role="img"
+        style={{ width: 44, height: 44, borderRadius: "50%", background: T.coralDim, border: `1.5px solid ${T.coralBorder}`, display: "flex", alignItems: "center", justifyContent: "center", color: T.coral, fontWeight: 700, fontSize: 14, marginBottom: 6, flexShrink: 0 }}>
         {session.managerFa.slice(0, 1)}
       </div>
       {/* Theme toggle */}
-      <button onClick={() => setIsDark(!isDark)} title={isDark ? "حالت روشن" : "حالت تاریک"}
-        style={{ width: 38, height: 38, borderRadius: 10, border: `1px solid ${T.border}`, background: T.surface2, color: T.text2, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", transition: "all 0.18s", marginBottom: 6 }}>
+      <button onClick={() => setIsDark(!isDark)} title={isDark ? "حالت روشن" : "حالت تاریک"} aria-label={isDark ? "تغییر به حالت روشن" : "تغییر به حالت تاریک"}
+        style={{ width: 44, height: 44, borderRadius: 10, border: `1px solid ${T.border}`, background: T.surface2, color: T.text2, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", transition: "all 0.18s", marginBottom: 6 }}>
         {isDark
           ? <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="5" /><line x1="12" y1="1" x2="12" y2="3" /><line x1="12" y1="21" x2="12" y2="23" /><line x1="4.22" y1="4.22" x2="5.64" y2="5.64" /><line x1="18.36" y1="18.36" x2="19.78" y2="19.78" /><line x1="1" y1="12" x2="3" y2="12" /><line x1="21" y1="12" x2="23" y2="12" /><line x1="4.22" y1="19.78" x2="5.64" y2="18.36" /><line x1="18.36" y1="5.64" x2="19.78" y2="4.22" /></svg>
           : <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z" /></svg>}
       </button>
       {/* Logout */}
-      <button onClick={onLogout} title="خروج"
-        style={{ width: 38, height: 38, borderRadius: 10, border: `1px solid ${T.dangerBorder}`, background: T.dangerBg, color: T.danger, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", transition: "all 0.18s" }}>
+      <button onClick={onLogout} title="خروج" aria-label="خروج از حساب"
+        style={{ width: 44, height: 44, borderRadius: 10, border: `1px solid ${T.dangerBorder}`, background: T.dangerBg, color: T.danger, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", transition: "all 0.18s" }}>
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
       </button>
     </div>
@@ -588,6 +589,9 @@ export default function App() {
   const [toast, setToast] = useState<{ msg: string; type: "success" | "error" } | null>(null);
   const [loadingProgress, setLoadingProgress] = useState(0);
   const loadingTimer = useRef<ReturnType<typeof setInterval> | null>(null);
+  const [apiKeyInput, setApiKeyInput] = useState(() => localStorage.getItem("radar:openrouter_key") || "");
+  const [showApiKeyInput, setShowApiKeyInput] = useState(false);
+  const hasApiKey = !!(OPENROUTER_KEY || localStorage.getItem("radar:openrouter_key"));
 
   useEffect(() => { loadHistory(); loadReports(); }, []);
 
@@ -750,6 +754,13 @@ export default function App() {
 
   const reset = () => { setCsvData(null); setResult(null); setPendingSave(null); setStep("upload"); setErrMsg(""); setRawDebug(""); setShowDebug(false); setSaveStatus(""); setSearchQuery(""); setFilterAgency("all"); setScreen("upload"); };
 
+  const saveApiKey = () => {
+    const trimmed = apiKeyInput.trim();
+    if (trimmed) { localStorage.setItem("radar:openrouter_key", trimmed); showToast("کلید API ذخیره شد ✓"); }
+    else { localStorage.removeItem("radar:openrouter_key"); showToast("کلید API حذف شد"); }
+    setShowApiKeyInput(false);
+  };
+
   const allAgencies = useMemo(() => { if (!result) return []; const s = new Set<string>(); result.advertisers.forEach(a => a.agencies.forEach(ag => s.add(ag.name))); return [...s]; }, [result]);
   const filteredAdvertisers = useMemo(() => {
     if (!result) return [];
@@ -773,7 +784,9 @@ export default function App() {
     const accentDim = type === "lead" ? T.greenDim : T.coralDim;
     const accentBorder = type === "lead" ? T.greenBorder : T.coralBorder;
     return (
-      <div onClick={() => setModalAdv({ adv, type })} style={{ ...card({ padding: "14px 16px", cursor: "pointer", display: "flex", alignItems: "center", gap: 16, transition: "border-color 0.15s" }), borderColor: T.border }}
+      <div onClick={() => setModalAdv({ adv, type })} role="button" tabIndex={0} aria-label={`مشاهده جزئیات ${adv.name}`}
+        onKeyDown={e => (e.key === "Enter" || e.key === " ") && setModalAdv({ adv, type })}
+        style={{ ...card({ padding: "14px 16px", cursor: "pointer", display: "flex", alignItems: "center", gap: 16, transition: "border-color 0.15s" }), borderColor: T.border }}
         onMouseEnter={e => (e.currentTarget.style.borderColor = accentBorder)}
         onMouseLeave={e => (e.currentTarget.style.borderColor = T.border)}
         className="fade-up">
@@ -828,6 +841,8 @@ export default function App() {
             <p style={{ margin: 0, fontSize: 14, color: T.text3 }}>آنالیز رقابتی روزانه یکتانت</p>
           </div>
           <div onDrop={onDrop} onDragOver={e => { e.preventDefault(); setDragOver(true); }} onDragLeave={() => setDragOver(false)} onClick={() => document.getElementById("fi")!.click()}
+            role="button" tabIndex={0} aria-label="بارگذاری فایل CSV یا XLSX"
+            onKeyDown={e => (e.key === "Enter" || e.key === " ") && document.getElementById("fi")!.click()}
             style={{ border: `2px dashed ${dragOver ? T.coral : T.border}`, borderRadius: 20, padding: "2.5rem 1.5rem", textAlign: "center", cursor: "pointer", background: dragOver ? T.coralDim : "transparent", transition: "all 0.2s" }}>
             <div style={{ width: 52, height: 52, borderRadius: 14, background: dragOver ? T.coral : T.surface2, border: `1px solid ${T.border}`, margin: "0 auto 14px", display: "flex", alignItems: "center", justifyContent: "center", transition: "all 0.2s" }}>
               <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke={dragOver ? "#fff" : T.coral} strokeWidth="1.5"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4" /><polyline points="17 8 12 3 7 8" /><line x1="12" y1="3" x2="12" y2="15" /></svg>
@@ -836,6 +851,28 @@ export default function App() {
             <p style={{ margin: 0, fontSize: 12, color: T.text3 }}>CSV یا XLSX · داده‌های رقابتی یکتانت</p>
             <input id="fi" type="file" accept=".csv,.xlsx,.xls" style={{ display: "none" }} onChange={e => handleFile(e.target.files![0])} />
           </div>
+          {!hasApiKey && !showApiKeyInput && (
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, padding: "12px 16px", background: T.dangerBg, border: `1px solid ${T.dangerBorder}`, borderRadius: 12 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={T.danger} strokeWidth="2"><circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" /></svg>
+                <p style={{ margin: 0, fontSize: 12, color: T.danger }}>کلید OpenRouter تنظیم نشده — بدون آن آنالیز اجرا نمی‌شود</p>
+              </div>
+              <button onClick={() => setShowApiKeyInput(true)} style={{ padding: "6px 14px", borderRadius: 8, border: `1px solid ${T.dangerBorder}`, background: "transparent", color: T.danger, fontSize: 12, cursor: "pointer", whiteSpace: "nowrap" }}>تنظیم</button>
+            </div>
+          )}
+          {showApiKeyInput && (
+            <div style={{ ...card({ padding: "16px 18px" }) }}>
+              <p style={{ margin: "0 0 10px", fontSize: 12, fontWeight: 600, color: T.text3 }}>کلید OpenRouter API</p>
+              <div style={{ display: "flex", gap: 10 }}>
+                <input type="password" value={apiKeyInput} onChange={e => setApiKeyInput(e.target.value)} placeholder="sk-or-..." autoFocus
+                  onKeyDown={e => e.key === "Enter" && saveApiKey()}
+                  style={{ flex: 1, fontSize: 13, padding: "10px 12px", borderRadius: 10, border: `1px solid ${T.border}`, background: T.surface2, color: T.text1, outline: "none", direction: "ltr" }} />
+                <button onClick={saveApiKey} style={{ padding: "10px 18px", borderRadius: 10, border: "none", background: T.coral, color: "#fff", fontSize: 13, fontWeight: 600, cursor: "pointer" }}>ذخیره</button>
+                <button onClick={() => setShowApiKeyInput(false)} style={{ padding: "10px 14px", borderRadius: 10, border: `1px solid ${T.border}`, background: "transparent", color: T.text2, fontSize: 13, cursor: "pointer" }}>لغو</button>
+              </div>
+              <p style={{ margin: "8px 0 0", fontSize: 11, color: T.text3 }}>کلید از <span style={{ direction: "ltr", display: "inline-block" }}>openrouter.ai/keys</span> دریافت می‌شود و فقط در مرورگر شما ذخیره می‌شود</p>
+            </div>
+          )}
           {uniqueReported.length > 0 && (
             <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 14px", background: T.coralDim, border: `1px solid ${T.coralBorder}`, borderRadius: 12 }}>
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke={T.coral} strokeWidth="2"><circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" /></svg>
@@ -936,6 +973,22 @@ export default function App() {
           ))}
         </div>
 
+        {/* Recommended action banner */}
+        {result.leads.length > 0 && (
+          <div style={{ display: "flex", alignItems: "center", gap: 14, padding: "14px 18px", background: T.greenDim, border: `1px solid ${T.greenBorder}`, borderRadius: 14 }}>
+            <div style={{ width: 36, height: 36, borderRadius: 10, background: T.green, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.5"><polyline points="9 11 12 14 22 4" /><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11" /></svg>
+            </div>
+            <div style={{ flex: 1 }}>
+              <p style={{ margin: "0 0 2px", fontSize: 13, fontWeight: 700, color: T.text1 }}>اقدام پیشنهادی</p>
+              <p style={{ margin: 0, fontSize: 12, color: T.text2 }}>
+                {result.leads.length} لید شناسایی شده — اولویت: <button onClick={() => { setResultsTab("leads"); }} style={{ background: "none", border: "none", color: T.green, fontWeight: 700, fontSize: 12, cursor: "pointer", padding: 0, textDecoration: "underline" }}>{result.leads[0].name}</button>
+              </p>
+            </div>
+            <button onClick={() => setResultsTab("leads")} style={{ padding: "7px 14px", borderRadius: 9, border: `1px solid ${T.greenBorder}`, background: "transparent", color: T.green, fontSize: 12, fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap" }}>مشاهده لیدها</button>
+          </div>
+        )}
+
         {/* Save prompt */}
         {pendingSave && saveStatus !== "saved" && (
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 16px", background: T.coralDim, border: `1px solid ${T.coralBorder}`, borderRadius: 14 }}>
@@ -974,7 +1027,11 @@ export default function App() {
               </select>
             </div>
             {filteredAdvertisers.length === 0
-              ? <div style={{ textAlign: "center", padding: "3rem", color: T.text3, fontSize: 14 }}>نتیجه‌ای یافت نشد</div>
+              ? <div style={{ textAlign: "center", padding: "3rem", color: T.text3, fontSize: 14, display: "flex", flexDirection: "column", alignItems: "center", gap: 12 }}>
+                  <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke={T.text3} strokeWidth="1.5"><circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></svg>
+                  <span>نتیجه‌ای یافت نشد</span>
+                  <button onClick={() => { setSearchQuery(""); setFilterAgency("all"); }} style={{ fontSize: 12, padding: "6px 16px", borderRadius: 8, border: `1px solid ${T.border}`, background: "transparent", color: T.text2, cursor: "pointer" }}>پاک کردن فیلتر</button>
+                </div>
               : <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(420px, 1fr))", gap: 12 }}>
                   {filteredAdvertisers.map((adv, i) => <AdvCard key={i} adv={adv} type="advertiser" />)}
                 </div>}
@@ -984,7 +1041,11 @@ export default function App() {
         {resultsTab === "leads" && (
           <div>
             {result.leads.length === 0
-              ? <div style={{ textAlign: "center", padding: "3rem", color: T.text3, fontSize: 14 }}>لیدی یافت نشد</div>
+              ? <div style={{ textAlign: "center", padding: "4rem", color: T.text3, fontSize: 14, display: "flex", flexDirection: "column", alignItems: "center", gap: 12 }}>
+                  <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke={T.text3} strokeWidth="1.2"><circle cx="12" cy="12" r="10" /><path d="M8 12h8M12 8v8" /></svg>
+                  <span>لیدی در این تحلیل یافت نشد</span>
+                  <span style={{ fontSize: 12, maxWidth: 280, lineHeight: 1.7 }}>اگر داده کافی در فایل وجود دارد، می‌توانید با قالب تفصیلی مجدداً آنالیز کنید</span>
+                </div>
               : <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(420px, 1fr))", gap: 12 }}>
                   {result.leads.map((l, i) => <AdvCard key={i} adv={l} type="lead" />)}
                 </div>}
@@ -1150,6 +1211,54 @@ export default function App() {
     </div>
   );
 
+  // ─ Settings screen ───────────────────────────────────────────────────────────
+  const SettingsScreen = () => {
+    const [localKey, setLocalKey] = useState(apiKeyInput);
+    const handleSave = () => {
+      setApiKeyInput(localKey);
+      const trimmed = localKey.trim();
+      if (trimmed) { localStorage.setItem("radar:openrouter_key", trimmed); showToast("کلید API ذخیره شد ✓"); }
+      else { localStorage.removeItem("radar:openrouter_key"); showToast("کلید API حذف شد"); }
+    };
+    const handleClearRef = () => {
+      localStorage.removeItem(REF_CACHE_KEY);
+      showToast("کش داده‌های مرجع پاک شد");
+    };
+    return (
+      <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+        <p style={{ margin: "0 0 4px", fontSize: 17, fontWeight: 700, color: T.text1 }}>تنظیمات</p>
+
+        <div style={card({ padding: "20px 22px" })}>
+          <p style={{ margin: "0 0 14px", fontSize: 13, fontWeight: 600, color: T.text2 }}>کلید OpenRouter API</p>
+          <div style={{ display: "flex", gap: 10 }}>
+            <input type="password" value={localKey} onChange={e => setLocalKey(e.target.value)}
+              placeholder="sk-or-..." onKeyDown={e => e.key === "Enter" && handleSave()}
+              aria-label="کلید OpenRouter API"
+              style={{ flex: 1, fontSize: 13, padding: "10px 12px", borderRadius: 10, border: `1px solid ${T.border}`, background: T.surface2, color: T.text1, outline: "none", direction: "ltr" }} />
+            <button onClick={handleSave} style={{ padding: "10px 20px", borderRadius: 10, border: "none", background: T.coral, color: "#fff", fontSize: 13, fontWeight: 600, cursor: "pointer" }}>ذخیره</button>
+          </div>
+          <p style={{ margin: "8px 0 0", fontSize: 11, color: T.text3, lineHeight: 1.6 }}>
+            کلید را از سایت openrouter.ai/keys دریافت کنید. این کلید فقط در مرورگر شما ذخیره می‌شود و به هیچ سروری ارسال نمی‌شود.
+          </p>
+        </div>
+
+        <div style={card({ padding: "18px 22px" })}>
+          <p style={{ margin: "0 0 10px", fontSize: 13, fontWeight: 600, color: T.text2 }}>کش داده‌های مرجع</p>
+          <p style={{ margin: "0 0 14px", fontSize: 12, color: T.text3 }}>اطلاعات صنعت و تیم مشتریان برای ۲۴ ساعت ذخیره می‌شود. در صورت به‌روزرسانی فایل مرجع، کش را پاک کنید.</p>
+          <button onClick={handleClearRef} style={{ padding: "8px 18px", borderRadius: 9, border: `1px solid ${T.border}`, background: "transparent", color: T.text2, fontSize: 12, cursor: "pointer" }}>پاک کردن کش</button>
+        </div>
+
+        <div style={card({ padding: "18px 22px" })}>
+          <p style={{ margin: "0 0 10px", fontSize: 13, fontWeight: 600, color: T.text2 }}>اطلاعات کاربر</p>
+          <div style={{ display: "flex", gap: 16, fontSize: 13, color: T.text2 }}>
+            <span>نام: <strong style={{ color: T.text1 }}>{session!.managerFa}</strong></span>
+            {!session!.isAdmin && <span>تیم: <strong style={{ color: T.text1 }}>{session!.teamFa}</strong></span>}
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   const globalStyles = `
     @keyframes radarSweep { to { transform: rotate(360deg); } }
     @keyframes radarPulse { 0%{transform:scale(1);opacity:0.6} 100%{transform:scale(3.5);opacity:0} }
@@ -1163,6 +1272,8 @@ export default function App() {
     ::-webkit-scrollbar-track { background: transparent; }
     ::-webkit-scrollbar-thumb { background: ${T.border}; border-radius: 10px; }
     select option { background: ${T.surface}; color: ${T.text1}; }
+    button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible { outline: 2px solid ${T.coral}; outline-offset: 2px; border-radius: 4px; }
+    [role="button"]:focus-visible { outline: 2px solid ${T.coral}; outline-offset: 2px; border-radius: 12px; }
   `;
 
   if (!session) return <><style>{globalStyles}</style><LoginPage T={T} onLogin={setSession} /></>;
@@ -1179,6 +1290,7 @@ export default function App() {
           {screen === "results" && <ResultsScreen />}
           {screen === "reports" && <ReportsScreen />}
           {screen === "history" && <HistoryScreen />}
+          {screen === "settings" && <SettingsScreen />}
         </div>
       </div>
 
