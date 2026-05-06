@@ -1,23 +1,69 @@
-import { useState, useCallback, useEffect, useMemo } from "react";
+import { useState, useCallback, useEffect, useMemo, useRef } from "react";
 import * as XLSX from "xlsx";
-import { ResponsiveContainer, LineChart, Line } from "recharts";
+import { TEAMS, ADMIN_USER, type SessionUser } from "./teams";
 
 const MODEL = "anthropic/claude-sonnet-4-5";
 const OPENROUTER_KEY = import.meta.env.VITE_OPENROUTER_KEY as string | undefined;
 const HISTORY_KEY = "analyzer:reported_advertisers";
 const REPORTS_KEY = "analyzer:saved_reports";
+const THEME_KEY = "analyzer:theme";
+const SESSION_KEY = "radar:session";
+const APP_PASSWORD = (import.meta.env.VITE_APP_PASSWORD as string | undefined) || "radar1403";
+const REF_CACHE_KEY = "radar:refdata_v2";
+const REF_CACHE_TTL = 24 * 60 * 60 * 1000;
+const CUSTOMERS_URL = "https://raw.githubusercontent.com/raufyektanet-cell/Radar/main/last_2_years_all_active_customers_V2_For_Radar.xlsx";
 
-const C = {
+interface RefEntry { industry1: string; industry2: string; team: string; manager: string; }
+type RefMap = Map<string, RefEntry>;
+
+async function loadRefData(): Promise<RefMap> {
+  try {
+    const cached = localStorage.getItem(REF_CACHE_KEY);
+    if (cached) {
+      const { entries, ts } = JSON.parse(cached);
+      if (Date.now() - ts < REF_CACHE_TTL) return new Map(entries);
+    }
+  } catch { /* ignore */ }
+  const resp = await fetch(CUSTOMERS_URL);
+  const buf = await resp.arrayBuffer();
+  const wb = XLSX.read(buf, { type: "array" });
+  const ws = wb.Sheets[wb.SheetNames[0]];
+  const rows = XLSX.utils.sheet_to_json<Record<string, string>>(ws, { defval: "" });
+  const map: RefMap = new Map();
+  for (const r of rows) {
+    const id = String(r["owner_id"] || "").trim();
+    if (!id) continue;
+    map.set(id, { industry1: r["industry_tag_1"] || "", industry2: r["industry_tag_2"] || "", team: r["team"] || "", manager: r["manager_last_name"] || "" });
+  }
+  try { localStorage.setItem(REF_CACHE_KEY, JSON.stringify({ entries: [...map.entries()], ts: Date.now() })); } catch { /* quota */ }
+  return map;
+}
+
+const DARK = {
+  bg: "#0C0C0E", surface: "#141416", surface2: "#1E1E23",
+  border: "#26262C", border2: "#30303A",
+  text1: "#F0EDE8", text2: "#908E89", text3: "#55524C",
+  coral: "#D4623A", coralDim: "rgba(212,98,58,0.14)", coralBorder: "rgba(212,98,58,0.30)",
+  green: "#1D9E75", greenDim: "rgba(29,158,117,0.14)", greenBorder: "rgba(29,158,117,0.30)",
+  amber: "#C07B28", amberDim: "rgba(192,123,40,0.14)", amberBorder: "rgba(192,123,40,0.30)",
+  danger: "#EF4444", dangerBg: "rgba(239,68,68,0.10)", dangerBorder: "rgba(239,68,68,0.28)",
+  successBg: "rgba(29,158,117,0.12)", successBorder: "rgba(29,158,117,0.28)", successText: "#34D399",
+  blue: "#4A9EE8", blueDim: "rgba(74,158,232,0.13)",
+};
+
+const LIGHT = {
+  bg: "#F5F0E8", surface: "#FFFFFF", surface2: "#EDE8DF",
+  border: "#E0DBD2", border2: "#D3CFC7",
+  text1: "#2C2C2A", text2: "#5F5E5A", text3: "#888780",
   coral: "#D4623A", coralDim: "rgba(212,98,58,0.10)", coralBorder: "rgba(212,98,58,0.22)",
-  sand: "#D3CFC7", stone: "#5F5E5A", mist: "#888780",
-  white: "#FFFFFF", bg: "#F5F0E8",
-  border: "#E8E3DA", border2: "#D3CFC7",
-  t1: "#2C2C2A", t2: "#5F5E5A", t3: "#888780",
-  green: "#1D9E75", greenDim: "rgba(29,158,117,0.10)", amber: "#854F0B", amberDim: "rgba(186,117,23,0.10)",
-  blue: "#185FA5", blueDim: "rgba(55,138,221,0.10)",
+  green: "#1D9E75", greenDim: "rgba(29,158,117,0.10)", greenBorder: "rgba(29,158,117,0.22)",
+  amber: "#854F0B", amberDim: "rgba(186,117,23,0.10)", amberBorder: "rgba(186,117,23,0.22)",
   danger: "#DC2626", dangerBg: "#FEF2F2", dangerBorder: "#FECACA",
   successBg: "#F0FDF4", successBorder: "#BBF7D0", successText: "#15803D",
+  blue: "#185FA5", blueDim: "rgba(55,138,221,0.10)",
 };
+
+type Theme = typeof DARK;
 
 const AGENCY_COLORS: Record<string, string> = {
   "یکتانت": "#D4623A", "تپسل": "#3B82F6", "ادکسو": "#8B5CF6", "آپارات": "#EF4444",
@@ -82,6 +128,8 @@ NOTE: وضعیت کلی بازار.
 ##END##
 
 RULES: No hashtags. Max 2 sentences per advertiser. Only top 2 agencies. LEADS mandatory. No کمپین. No translated owner_name. No English. Start with ##`;
+
+// ── Utilities ────────────────────────────────────────────────────────────────
 
 function normalizeDate(val: unknown): string {
   if (!val) return "";
@@ -155,7 +203,7 @@ function parseAgencies(str: string): Agency[] {
   return str.split(",").map(s => { const [k, v] = s.trim().split(":"); const name = TR[k?.trim()] || k?.trim() || ""; return { name, value: parseInt(v) || 0, color: AGENCY_COLORS[name] || "#999" }; }).filter(a => a.name && a.value > 0);
 }
 
-interface Advertiser { name: string; ownerid: string; manager: string; summary?: string; agencies: Agency[]; note?: string; }
+interface Advertiser { name: string; ownerid: string; manager: string; summary?: string; note?: string; agencies: Agency[]; industry1?: string; industry2?: string; }
 interface Competitor { platform: string; newclients: string; topclients: string; note: string; }
 interface AnalysisResult { dateLabel: string; advertisers: Advertiser[]; leads: Advertiser[]; competitors: Competitor[]; market: string; disclaimer: string; id?: string; savedAt?: number; }
 interface HistoryEntry { date: string; dateLabel: string; names: string[]; }
@@ -174,145 +222,356 @@ function generateHTML(result: AnalysisResult): string {
   const agBar = (agencies: Agency[]) => {
     const total = agencies.reduce((s, a) => s + a.value, 0);
     if (!total) return "";
-    const bars = agencies.map(a => `<div style="flex:${a.value};background:${a.color}"></div>`).join("");
-    const legend = agencies.map(a => `<span style="font-size:11px;color:#888;display:inline-flex;align-items:center;gap:4px;margin-left:8px"><span style="width:8px;height:8px;border-radius:50%;background:${a.color};display:inline-block"></span>${a.name} ${Math.round(a.value / total * 100)}٪</span>`).join("");
-    return `<div style="display:flex;border-radius:4px;overflow:hidden;height:5px;margin:8px 0 4px">${bars}</div><div>${legend}</div>`;
+    return `<div style="display:flex;border-radius:4px;overflow:hidden;height:5px;margin:8px 0 4px">${agencies.map(a => `<div style="flex:${a.value};background:${a.color}"></div>`).join("")}</div><div>${agencies.map(a => `<span style="font-size:11px;color:#888;display:inline-flex;align-items:center;gap:4px;margin-left:8px"><span style="width:8px;height:8px;border-radius:50%;background:${a.color};display:inline-block"></span>${a.name} ${Math.round(a.value / total * 100)}٪</span>`).join("")}</div>`;
   };
-
-  const advCards = result.advertisers.map((adv) => {
-    const total = adv.agencies.reduce((s, a) => s + a.value, 0);
-    const ykt = adv.agencies.find(a => a.name === "یکتانت");
-    const yPct = total > 0 && ykt ? Math.round(ykt.value / total * 100) : 0;
-    const yColor = yPct >= 60 ? "#D4623A" : yPct >= 40 ? "#854F0B" : "#dc2626";
-    return `<div style="display:flex;gap:12px;margin-bottom:10px">
-      <div style="width:36px;height:36px;border-radius:9px;background:rgba(212,98,58,0.1);border:1.5px solid rgba(212,98,58,0.22);display:flex;align-items:center;justify-content:center;flex-shrink:0;margin-top:2px">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#D4623A" stroke-width="1.5"><path d="M20 7H4a2 2 0 00-2 2v6a2 2 0 002 2h16a2 2 0 002-2V9a2 2 0 00-2-2z"/></svg>
-      </div>
-      <div onclick="this.querySelector('.body').style.display=this.querySelector('.body').style.display==='block'?'none':'block'" style="flex:1;background:#fff;border:0.5px solid #D3CFC7;border-radius:12px;padding:12px 14px;cursor:pointer">
-        <div style="display:flex;justify-content:space-between;align-items:start">
-          <div>
-            <div style="font-weight:500;font-size:13px;direction:ltr">${adv.name}</div>
-            <div style="font-size:11px;color:#888;direction:ltr">#${adv.ownerid}${adv.manager ? ` · <span style="color:#D4623A">${adv.manager}</span>` : ""}</div>
-            ${total > 0 ? `<div style="display:flex;align-items:center;gap:8px;margin-top:5px"><div style="flex:1;height:4px;border-radius:2px;background:#EDE8DF;overflow:hidden"><div style="width:${yPct}%;height:100%;background:#D4623A;border-radius:2px"></div></div><span style="font-size:11px;font-weight:500;color:${yColor}">یکتانت ${yPct}٪</span></div>` : ""}
-          </div>
-          <span style="font-size:11px;color:#888">▼</span>
-        </div>
-        <div class="body" style="display:none;margin-top:10px;padding-top:10px;border-top:0.5px solid #EDE8DF">
-          <p style="font-size:13px;color:#5F5E5A;line-height:1.9;margin:0 0 8px">${adv.summary}</p>
-          ${agBar(adv.agencies)}
-        </div>
-      </div>
-    </div>`;
+  const advCards = result.advertisers.map(adv => {
+    const total = adv.agencies.reduce((s, a) => s + a.value, 0), ykt = adv.agencies.find(a => a.name === "یکتانت"), yPct = total > 0 && ykt ? Math.round(ykt.value / total * 100) : 0;
+    return `<div style="flex:1;background:#fff;border:0.5px solid #D3CFC7;border-radius:12px;padding:12px 14px;margin-bottom:10px"><div style="font-weight:500;font-size:13px;direction:ltr">${adv.name} <span style="color:#888;font-size:11px">#${adv.ownerid}</span></div>${total > 0 ? `<div style="display:flex;align-items:center;gap:8px;margin-top:5px"><div style="flex:1;height:4px;border-radius:2px;background:#EDE8DF;overflow:hidden"><div style="width:${yPct}%;height:100%;background:#D4623A"></div></div><span style="font-size:11px;font-weight:500;color:#D4623A">یکتانت ${yPct}٪</span></div>` : ""}<p style="font-size:13px;color:#5F5E5A;line-height:1.9;margin:8px 0">${adv.summary || ""}</p>${agBar(adv.agencies)}</div>`;
   }).join("");
-
-  const leadCards = result.leads.map(l => {
-    const total = l.agencies.reduce((s, a) => s + a.value, 0);
-    return `<div style="display:flex;gap:12px;margin-bottom:10px">
-      <div style="width:36px;height:36px;border-radius:9px;background:rgba(29,158,117,0.1);border:1.5px solid rgba(29,158,117,0.2);display:flex;align-items:center;justify-content:center;flex-shrink:0;margin-top:2px">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#1D9E75" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg>
-      </div>
-      <div onclick="this.querySelector('.body').style.display=this.querySelector('.body').style.display==='block'?'none':'block'" style="flex:1;background:#fff;border:0.5px solid rgba(29,158,117,0.2);border-radius:12px;padding:12px 14px;cursor:pointer">
-        <div style="font-weight:500;font-size:13px;direction:ltr">${l.name} <span style="font-size:11px;color:#888;font-weight:400">#${l.ownerid}</span></div>
-        ${l.manager ? `<div style="font-size:11px;color:#D4623A;margin-top:2px">${l.manager}</div>` : ""}
-        <div class="body" style="display:none;margin-top:8px;padding-top:8px;border-top:0.5px solid #EDE8DF">
-          <p style="font-size:13px;color:#5F5E5A;line-height:1.9;margin:0 0 8px">${l.note}</p>
-          ${agBar(l.agencies)}
-        </div>
-      </div>
-    </div>`;
-  }).join("");
-
-  const compCards = result.competitors.map(c => `
-    <div style="display:flex;gap:12px;margin-bottom:10px">
-      <div style="width:36px;height:36px;border-radius:9px;background:rgba(186,117,23,0.1);border:1.5px solid rgba(186,117,23,0.2);display:flex;align-items:center;justify-content:center;flex-shrink:0;margin-top:2px">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#854F0B" stroke-width="1.5"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
-      </div>
-      <div style="flex:1;background:#fff;border:0.5px solid #D3CFC7;border-radius:12px;padding:12px 14px">
-        <div style="font-weight:500;font-size:13px;color:#854F0B;margin-bottom:4px">${c.platform}</div>
-        <p style="font-size:13px;color:#5F5E5A;line-height:1.8;margin:0 0 4px">${c.note}</p>
-        ${c.topclients ? `<div style="font-size:12px;color:#888">مهم‌ترین: ${c.topclients}</div>` : ""}
-        ${c.newclients && c.newclients !== "ندارد" ? `<div style="font-size:12px;color:#1D9E75">جدید: ${c.newclients}</div>` : ""}
-      </div>
-    </div>`).join("");
-
-  return `<!DOCTYPE html>
-<html lang="fa" dir="rtl">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>گزارش بازار — ${result.dateLabel}</title>
-<style>*{box-sizing:border-box;margin:0;padding:0}body{font-family:system-ui,sans-serif;background:#F5F0E8;color:#2C2C2A;direction:rtl;padding:1.5rem 1rem}.container{max-width:720px;margin:0 auto}</style>
-</head>
-<body>
-<div class="container">
-  <div style="display:flex;align-items:center;gap:14px;margin-bottom:1.5rem;padding-bottom:1.5rem;border-bottom:1px solid #D3CFC7">
-    <div style="width:44px;height:44px;border-radius:12px;background:#D4623A;display:flex;align-items:center;justify-content:center;flex-shrink:0">
-      <svg width="20" height="20" viewBox="0 0 24 24" fill="none"><rect x="3" y="3" width="7" height="7" rx="1" fill="#fff"/><rect x="14" y="3" width="7" height="7" rx="1" fill="#fff"/><rect x="3" y="14" width="7" height="7" rx="1" fill="#fff"/><rect x="14" y="14" width="7" height="7" rx="1" fill="#fff"/></svg>
-    </div>
-    <div>
-      <div style="font-size:19px;font-weight:500;letter-spacing:-0.3px">Market Analyzer</div>
-      <div style="font-size:12px;color:#888">از مارکت چه خبر؟ ${result.dateLabel}</div>
-    </div>
-  </div>
-
-  <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:20px">
-    ${[["تاریخ", result.dateLabel, "#2C2C2A"], ["تبلیغ‌کننده", String(result.advertisers.length), "#D4623A"], ["لید", String(result.leads.length), "#1D9E75"], ["رقیب", String(result.competitors.length), "#854F0B"]].map(([l, v, c]) => `
-    <div style="background:#EDE8DF;border-radius:10px;padding:11px 13px">
-      <div style="font-size:11px;color:#888;margin-bottom:3px">${l}</div>
-      <div style="font-size:19px;font-weight:500;color:${c}">${v}</div>
-    </div>`).join("")}
-  </div>
-
-  ${result.advertisers.length > 0 ? `<div style="font-size:11px;font-weight:500;color:#888;text-transform:uppercase;letter-spacing:0.08em;margin-bottom:10px;padding-right:48px">تبلیغ‌کننده‌های مهم</div>${advCards}` : ""}
-  ${result.leads.length > 0 ? `<div style="font-size:11px;font-weight:500;color:#888;text-transform:uppercase;letter-spacing:0.08em;margin:16px 0 10px;padding-right:48px">فرصت‌های اپروچ</div>${leadCards}` : ""}
-  ${result.competitors.length > 0 ? `<div style="font-size:11px;font-weight:500;color:#888;text-transform:uppercase;letter-spacing:0.08em;margin:16px 0 10px;padding-right:48px">پلتفرم‌های رقیب</div>${compCards}` : ""}
-  ${result.market ? `<div style="display:flex;gap:12px;margin-top:16px"><div style="width:36px;height:36px;border-radius:9px;background:#EDE8DF;border:1.5px solid #D3CFC7;display:flex;align-items:center;justify-content:center;flex-shrink:0;margin-top:2px"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#888" stroke-width="1.5"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="12" y1="17" x2="12" y2="21"/></svg></div><div style="flex:1;background:#EDE8DF;border-radius:12px;padding:12px 14px"><div style="font-size:11px;color:#888;font-weight:500;text-transform:uppercase;letter-spacing:0.06em;margin-bottom:6px">تحلیل کلی بازار</div><p style="font-size:13px;color:#5F5E5A;line-height:1.9">${result.market}</p></div></div>` : ""}
-
-  <div style="font-size:11px;color:#888;font-style:italic;margin-top:2rem;padding-top:1rem;border-top:1px solid #D3CFC7;text-align:center">${result.disclaimer}</div>
-  <div style="font-size:11px;color:#888;text-align:center;margin-top:6px">📍 Powered by Claude</div>
-</div>
-</body>
-</html>`;
+  return `<!DOCTYPE html><html lang="fa" dir="rtl"><head><meta charset="UTF-8"><title>گزارش بازار — ${result.dateLabel}</title><style>*{box-sizing:border-box;margin:0;padding:0}body{font-family:system-ui,sans-serif;background:#F5F0E8;color:#2C2C2A;direction:rtl;padding:1.5rem 1rem}.c{max-width:720px;margin:0 auto}</style></head><body><div class="c"><h2 style="margin-bottom:1rem">از مارکت چه خبر؟ ${result.dateLabel}</h2>${advCards}<p style="font-size:11px;color:#888;margin-top:1.5rem;font-style:italic">${result.disclaimer}</p></div></body></html>`;
 }
 
 function downloadHTML(result: AnalysisResult) {
-  const html = generateHTML(result);
-  const blob = new Blob([html], { type: "text/html;charset=utf-8" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
+  const blob = new Blob([generateHTML(result)], { type: "text/html;charset=utf-8" });
+  const url = URL.createObjectURL(blob), a = document.createElement("a");
   a.href = url; a.download = `market-report-${result.dateLabel.replace(/ /g, "-")}.html`; a.click();
   URL.revokeObjectURL(url);
 }
 
-function AgencyBar({ agencies }: { agencies: Agency[] }) {
-  if (!agencies || agencies.length === 0) return null;
+// ── UI Components ─────────────────────────────────────────────────────────────
+
+function AgencyDonut({ agencies, size = 72 }: { agencies: Agency[]; size?: number }) {
+  const r = size * 0.36, cx = size / 2, cy = size / 2, circ = 2 * Math.PI * r;
   const total = agencies.reduce((s, a) => s + a.value, 0);
+  if (!total) return <div style={{ width: size, height: size }} />;
+  let off = 0;
+  const slices = agencies.map(a => {
+    const frac = a.value / total, dash = frac * circ, gap = circ - dash, dashoffset = -(off * circ);
+    off += frac;
+    return { ...a, dash, gap, dashoffset };
+  });
+  const ykt = agencies.find(a => a.name === "یکتانت");
+  const yPct = ykt ? Math.round(ykt.value / total * 100) : 0;
   return (
-    <div style={{ marginTop: 8 }}>
-      <div style={{ display: "flex", borderRadius: 5, overflow: "hidden", height: 5 }}>
-        {agencies.map((a, i) => <div key={i} title={`${a.name}: ${Math.round(a.value / total * 100)}٪`} style={{ flex: a.value, background: a.color }} />)}
-      </div>
-      <div style={{ display: "flex", flexWrap: "wrap", gap: "3px 10px", marginTop: 5 }}>
-        {agencies.map((a, i) => (
-          <span key={i} style={{ fontSize: 11, color: C.t3, display: "flex", alignItems: "center", gap: 4 }}>
-            <span style={{ width: 7, height: 7, borderRadius: "50%", background: a.color, display: "inline-block", flexShrink: 0 }} />
-            {a.name} {Math.round(a.value / total * 100)}٪
-          </span>
-        ))}
+    <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} style={{ flexShrink: 0 }}>
+      <circle cx={cx} cy={cy} r={r} fill="none" stroke="rgba(128,128,128,0.12)" strokeWidth={size * 0.11} />
+      {slices.map((s, i) => (
+        <circle key={i} cx={cx} cy={cy} r={r} fill="none" stroke={s.color} strokeWidth={size * 0.11}
+          strokeDasharray={`${s.dash} ${s.gap}`} strokeDashoffset={s.dashoffset}
+          transform={`rotate(-90 ${cx} ${cy})`} strokeLinecap="round" />
+      ))}
+      <text x={cx} y={cy} textAnchor="middle" dominantBaseline="middle"
+        fontSize={size * 0.17} fontWeight="600" fill={ykt ? "#D4623A" : "#888"} fontFamily="system-ui">
+        {yPct}٪
+      </text>
+    </svg>
+  );
+}
+
+function AgencyLegend({ agencies, T }: { agencies: Agency[]; T: Theme }) {
+  const total = agencies.reduce((s, a) => s + a.value, 0);
+  if (!total) return null;
+  return (
+    <div style={{ display: "flex", flexWrap: "wrap", gap: "3px 10px", marginTop: 6 }}>
+      {agencies.map((a, i) => (
+        <span key={i} style={{ fontSize: 11, color: T.text3, display: "flex", alignItems: "center", gap: 4 }}>
+          <span style={{ width: 7, height: 7, borderRadius: "50%", background: a.color, display: "inline-block", flexShrink: 0 }} />
+          {a.name} {Math.round(a.value / total * 100)}٪
+        </span>
+      ))}
+    </div>
+  );
+}
+
+function RadarHero({ T }: { T: Theme }) {
+  return (
+    <div style={{ position: "relative", width: 200, height: 200, margin: "0 auto 28px" }}>
+      <svg width="200" height="200" viewBox="0 0 200 200">
+        <circle cx="100" cy="100" r="85" fill="none" stroke={T.coral} strokeWidth="0.5" opacity="0.15" />
+        <circle cx="100" cy="100" r="60" fill="none" stroke={T.coral} strokeWidth="0.5" opacity="0.22" />
+        <circle cx="100" cy="100" r="36" fill="none" stroke={T.coral} strokeWidth="0.5" opacity="0.32" />
+        <line x1="100" y1="15" x2="100" y2="185" stroke={T.coral} strokeWidth="0.4" opacity="0.1" />
+        <line x1="15" y1="100" x2="185" y2="100" stroke={T.coral} strokeWidth="0.4" opacity="0.1" />
+        <g style={{ transformOrigin: "100px 100px", animation: "radarSweep 3s linear infinite" }}>
+          <path d="M100,100 L100,15 A85,85 0 0,1 185,100 Z" fill={T.coral} opacity="0.08" />
+          <line x1="100" y1="100" x2="100" y2="15" stroke={T.coral} strokeWidth="1.5" opacity="0.6" />
+        </g>
+        <circle cx="142" cy="68" r="4" fill={T.coral} style={{ animation: "dotPop 3s 0.9s ease-in-out infinite" }} />
+        <circle cx="72" cy="140" r="3" fill={T.green} style={{ animation: "dotPop 3s 1.7s ease-in-out infinite" }} />
+        <circle cx="158" cy="128" r="2.5" fill={T.amber} style={{ animation: "dotPop 3s 2.3s ease-in-out infinite" }} />
+        <circle cx="100" cy="100" r="5" fill={T.coral} />
+        <circle cx="100" cy="100" r="5" fill={T.coral} opacity="0.6" style={{ animation: "radarPulse 2.4s ease-out infinite" }} />
+      </svg>
+    </div>
+  );
+}
+
+function Toast({ msg, type, onDone, T }: { msg: string; type: "success" | "error"; onDone: () => void; T: Theme }) {
+  useEffect(() => { const t = setTimeout(onDone, 3000); return () => clearTimeout(t); }, [onDone]);
+  const bg = type === "success" ? T.green : T.danger;
+  return (
+    <div style={{ position: "fixed", bottom: 24, left: "50%", transform: "translateX(-50%)", background: bg, color: "#fff", padding: "10px 20px", borderRadius: 12, fontSize: 13, fontWeight: 500, zIndex: 9999, animation: "fadeUp 0.2s ease both", whiteSpace: "nowrap", boxShadow: "0 4px 20px rgba(0,0,0,0.3)" }}>
+      {msg}
+    </div>
+  );
+}
+
+function DetailModal({ adv, type, T, onClose, onRegen, regenLoading }: { adv: Advertiser; type: string; T: Theme; onClose: () => void; onRegen: () => void; regenLoading: boolean }) {
+  useEffect(() => {
+    const esc = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    document.addEventListener("keydown", esc);
+    return () => document.removeEventListener("keydown", esc);
+  }, [onClose]);
+  const total = adv.agencies.reduce((s, a) => s + a.value, 0);
+  return (
+    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", zIndex: 500, display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }} onClick={onClose}>
+      <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 20, padding: "24px 28px", width: "100%", maxWidth: 480, animation: "slideInModal 0.22s ease both", direction: "rtl" }} onClick={e => e.stopPropagation()}>
+        <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: 20 }}>
+          <div>
+            <div style={{ fontSize: 17, fontWeight: 600, color: T.text1, direction: "ltr" }}>{adv.name}</div>
+            <div style={{ fontSize: 12, color: T.text3, marginTop: 3, direction: "ltr" }}>#{adv.ownerid}{adv.manager ? ` · ` : ""}{adv.manager && <span style={{ color: T.coral }}>{adv.manager}</span>}</div>
+          </div>
+          <div style={{ display: "flex", gap: 8 }}>
+            <button onClick={onRegen} disabled={regenLoading} style={{ padding: "6px 12px", borderRadius: 8, border: `1px solid ${T.border}`, background: "transparent", color: T.text2, fontSize: 12, cursor: "pointer", display: "flex", alignItems: "center", gap: 5 }}>
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={regenLoading ? { animation: "spin 0.8s linear infinite" } : {}}><polyline points="23 4 23 10 17 10" /><path d="M20.49 15a9 9 0 11-2.12-9.36L23 10" /></svg>
+              بازسازی
+            </button>
+            <button onClick={onClose} style={{ width: 32, height: 32, borderRadius: 8, border: `1px solid ${T.border}`, background: "transparent", color: T.text3, cursor: "pointer", fontSize: 18, lineHeight: 1, display: "flex", alignItems: "center", justifyContent: "center" }}>×</button>
+          </div>
+        </div>
+        {total > 0 && (
+          <div style={{ marginBottom: 18 }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 24, marginBottom: 14 }}>
+              <AgencyDonut agencies={adv.agencies} size={100} />
+              <AgencyLegend agencies={adv.agencies} T={T} />
+            </div>
+            <div style={{ display: "flex", borderRadius: 6, overflow: "hidden", height: 6 }}>
+              {adv.agencies.map((a, i) => <div key={i} style={{ flex: a.value, background: a.color }} />)}
+            </div>
+          </div>
+        )}
+        {(adv.industry1 || adv.industry2) && (
+          <div style={{ display: "flex", gap: 8, marginBottom: 14, flexWrap: "wrap" }}>
+            {adv.industry1 && <span style={{ fontSize: 12, color: T.blue, background: T.blueDim, padding: "4px 12px", borderRadius: 20, border: `1px solid rgba(74,158,232,0.2)` }}>{adv.industry1}</span>}
+            {adv.industry2 && <span style={{ fontSize: 12, color: T.text3, background: T.surface2, padding: "4px 12px", borderRadius: 20, border: `1px solid ${T.border}` }}>{adv.industry2}</span>}
+          </div>
+        )}
+        <div style={{ background: T.surface2, borderRadius: 12, padding: "14px 16px" }}>
+          <p style={{ margin: 0, fontSize: 14, color: T.text2, lineHeight: 2, direction: "rtl" }}>
+            {type === "lead" ? adv.note : adv.summary}
+          </p>
+        </div>
       </div>
     </div>
   );
 }
 
+// ── Login Page ────────────────────────────────────────────────────────────────
+
+function LoginPage({ T, onLogin }: { T: Theme; onLogin: (u: SessionUser) => void }) {
+  const [selected, setSelected] = useState<SessionUser | null>(null);
+  const [pw, setPw] = useState("");
+  const [err, setErr] = useState("");
+  const [showPw, setShowPw] = useState(false);
+
+  const allUsers: SessionUser[] = [
+    ...TEAMS.map(t => ({ username: t.username, managerFa: t.managerFa, managerEn: t.managerEn, teamFa: t.teamFa, teamEn: t.teamEn, isAdmin: false })),
+    { username: ADMIN_USER.username, managerFa: ADMIN_USER.managerFa, managerEn: ADMIN_USER.managerEn, teamFa: ADMIN_USER.teamFa, teamEn: ADMIN_USER.teamEn, isAdmin: true },
+  ];
+
+  const byDept: Record<string, SessionUser[]> = {};
+  TEAMS.forEach((t, i) => {
+    if (!byDept[t.dept]) byDept[t.dept] = [];
+    byDept[t.dept].push(allUsers[i]);
+  });
+
+  const handleLogin = () => {
+    if (!selected) { setErr("لطفاً نام خود را انتخاب کنید"); return; }
+    if (pw !== APP_PASSWORD) { setErr("رمز عبور اشتباه است"); return; }
+    localStorage.setItem(SESSION_KEY, JSON.stringify({ ...selected, loginAt: Date.now() }));
+    onLogin(selected);
+  };
+
+  const deptColors: Record<string, string> = { "بیزینس": T.coral, "محصول": T.blue, "فروش": T.green, "": T.text3 };
+
+  return (
+    <div style={{ minHeight: "100dvh", background: T.bg, display: "flex", alignItems: "center", justifyContent: "center", padding: 24, direction: "rtl", fontFamily: "'Vazirmatn', system-ui, sans-serif" }}>
+      <style>{`@keyframes fadeUp{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:translateY(0)}} *{box-sizing:border-box}`}</style>
+      <div style={{ width: "100%", maxWidth: 560, animation: "fadeUp 0.3s ease both" }}>
+        {/* Header */}
+        <div style={{ textAlign: "center", marginBottom: 32 }}>
+          <div style={{ width: 52, height: 52, borderRadius: 16, background: T.coral, display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 14px" }}>
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="10" stroke="#fff" strokeWidth="1.5" /><circle cx="12" cy="12" r="6" stroke="#fff" strokeWidth="1" opacity="0.6" /><circle cx="12" cy="12" r="2.5" fill="#fff" /></svg>
+          </div>
+          <h1 style={{ margin: "0 0 6px", fontSize: 24, fontWeight: 700, color: T.text1 }}>Radar</h1>
+          <p style={{ margin: 0, fontSize: 14, color: T.text3 }}>آنالیز رقابتی روزانه یکتانت</p>
+        </div>
+
+        {/* Manager grid */}
+        <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 20, padding: 20, marginBottom: 16 }}>
+          <p style={{ margin: "0 0 14px", fontSize: 12, fontWeight: 600, color: T.text3, textTransform: "uppercase", letterSpacing: "0.08em" }}>نام خود را انتخاب کنید</p>
+          {Object.entries(byDept).map(([dept, users]) => (
+            <div key={dept} style={{ marginBottom: 16 }}>
+              <p style={{ margin: "0 0 8px", fontSize: 11, color: deptColors[dept] || T.text3, fontWeight: 600 }}>{dept}</p>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+                {users.map(u => {
+                  const active = selected?.username === u.username;
+                  return (
+                    <button key={u.username} onClick={() => { setSelected(u); setErr(""); }}
+                      style={{ padding: "8px 14px", borderRadius: 10, border: `1.5px solid ${active ? T.coral : T.border}`, background: active ? T.coralDim : "transparent", color: active ? T.coral : T.text2, fontSize: 13, fontWeight: active ? 600 : 400, cursor: "pointer", transition: "all 0.15s" }}>
+                      {u.managerFa}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          ))}
+          {/* Admin */}
+          <div style={{ borderTop: `1px solid ${T.border}`, paddingTop: 12, marginTop: 4 }}>
+            {(() => {
+              const adminUser = allUsers[allUsers.length - 1];
+              const active = selected?.username === "admin";
+              return (
+                <button onClick={() => { setSelected(adminUser); setErr(""); }}
+                  style={{ padding: "8px 14px", borderRadius: 10, border: `1.5px solid ${active ? T.coral : T.border}`, background: active ? T.coralDim : "transparent", color: active ? T.coral : T.text3, fontSize: 13, fontWeight: active ? 600 : 400, cursor: "pointer", transition: "all 0.15s" }}>
+                  ادمین (همه تیم‌ها)
+                </button>
+              );
+            })()}
+          </div>
+        </div>
+
+        {/* Password */}
+        <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 16, padding: 20 }}>
+          <p style={{ margin: "0 0 10px", fontSize: 12, fontWeight: 600, color: T.text3, textTransform: "uppercase", letterSpacing: "0.08em" }}>رمز عبور</p>
+          <div style={{ display: "flex", gap: 10 }}>
+            <div style={{ flex: 1, position: "relative" }}>
+              <input type={showPw ? "text" : "password"} value={pw} onChange={e => { setPw(e.target.value); setErr(""); }}
+                onKeyDown={e => e.key === "Enter" && handleLogin()}
+                placeholder="رمز عبور را وارد کنید"
+                style={{ width: "100%", fontSize: 14, padding: "11px 14px", paddingLeft: 40, borderRadius: 11, border: `1px solid ${err ? T.danger : T.border}`, background: T.surface2, color: T.text1, outline: "none", direction: "rtl" }} />
+              <button onClick={() => setShowPw(v => !v)}
+                style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)", background: "none", border: "none", cursor: "pointer", color: T.text3, padding: 0, display: "flex" }}>
+                {showPw
+                  ? <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M17.94 17.94A10.07 10.07 0 0112 20c-7 0-11-8-11-8a18.45 18.45 0 015.06-5.94"/><path d="M9.9 4.24A9.12 9.12 0 0112 4c7 0 11 8 11 8a18.5 18.5 0 01-2.16 3.19"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
+                  : <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>}
+              </button>
+            </div>
+            <button onClick={handleLogin}
+              style={{ padding: "11px 22px", borderRadius: 11, border: "none", background: T.coral, color: "#fff", fontSize: 14, fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap" }}>
+              ورود
+            </button>
+          </div>
+          {err && <p style={{ margin: "8px 0 0", fontSize: 12, color: T.danger }}>{err}</p>}
+          {selected && <p style={{ margin: "10px 0 0", fontSize: 12, color: T.text3 }}>
+            ورود به عنوان <span style={{ color: T.coral, fontWeight: 600 }}>{selected.managerFa}</span>
+            {!selected.isAdmin && <span> — تیم {selected.teamFa}</span>}
+          </p>}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Sidebar ───────────────────────────────────────────────────────────────────
+
+function Sidebar({ screen, setScreen, isDark, setIsDark, hasResult, session, onLogout, refLoading, refError, T }: {
+  screen: string; setScreen: (s: string) => void; isDark: boolean; setIsDark: (v: boolean) => void; hasResult: boolean; session: SessionUser; onLogout: () => void; refLoading: boolean; refError: boolean; T: Theme;
+}) {
+  const items = [
+    { id: "upload", label: "آنالیز", icon: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4" /><polyline points="17 8 12 3 7 8" /><line x1="12" y1="3" x2="12" y2="15" /></svg> },
+    { id: "results", label: "نتایج", icon: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><rect x="3" y="3" width="7" height="7" rx="1" /><rect x="14" y="3" width="7" height="7" rx="1" /><rect x="3" y="14" width="7" height="7" rx="1" /><rect x="14" y="14" width="7" height="7" rx="1" /></svg>, disabled: !hasResult },
+    { id: "reports", label: "گزارش‌ها", icon: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" /><polyline points="14 2 14 8 20 8" /><line x1="16" y1="13" x2="8" y2="13" /><line x1="16" y1="17" x2="8" y2="17" /></svg> },
+    { id: "history", label: "تاریخچه", icon: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" /></svg> },
+  ];
+  return (
+    <div style={{ position: "fixed", right: 0, top: 0, bottom: 0, width: 80, background: T.surface, borderLeft: `1px solid ${T.border}`, display: "flex", flexDirection: "column", alignItems: "center", paddingTop: 20, paddingBottom: 20, zIndex: 200, gap: 2 }}>
+      <div style={{ width: 38, height: 38, borderRadius: 11, background: T.coral, display: "flex", alignItems: "center", justifyContent: "center", marginBottom: 16, flexShrink: 0 }}>
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="10" stroke="#fff" strokeWidth="1.5" /><circle cx="12" cy="12" r="6" stroke="#fff" strokeWidth="1" opacity="0.6" /><circle cx="12" cy="12" r="2.5" fill="#fff" /></svg>
+      </div>
+      {items.map(item => {
+        const active = screen === item.id;
+        return (
+          <button key={item.id} onClick={() => !item.disabled && setScreen(item.id)} title={item.label}
+            style={{ width: 48, height: 48, borderRadius: 13, border: "none", cursor: item.disabled ? "default" : "pointer", background: active ? T.coralDim : "transparent", color: active ? T.coral : item.disabled ? T.text3 : T.text2, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 3, transition: "all 0.18s", opacity: item.disabled ? 0.4 : 1 }}>
+            {item.icon}
+            <span style={{ fontSize: 8.5, fontWeight: active ? 600 : 400, letterSpacing: "0.01em" }}>{item.label}</span>
+          </button>
+        );
+      })}
+      <div style={{ flex: 1 }} />
+      {/* Ref-data status dot */}
+      <div title={refLoading ? "در حال بارگذاری اطلاعات..." : refError ? "خطا در بارگذاری اطلاعات" : "اطلاعات بارگذاری شد"}
+        style={{ width: 8, height: 8, borderRadius: "50%", background: refLoading ? T.amber : refError ? T.danger : T.green, marginBottom: 10, flexShrink: 0, animation: refLoading ? "radarPulse 1.5s ease-out infinite" : "none" }} />
+      {/* User avatar */}
+      <div title={`${session.managerFa} — ${session.teamFa}`}
+        style={{ width: 38, height: 38, borderRadius: "50%", background: T.coralDim, border: `1.5px solid ${T.coralBorder}`, display: "flex", alignItems: "center", justifyContent: "center", color: T.coral, fontWeight: 700, fontSize: 13, marginBottom: 6, flexShrink: 0 }}>
+        {session.managerFa.slice(0, 1)}
+      </div>
+      {/* Theme toggle */}
+      <button onClick={() => setIsDark(!isDark)} title={isDark ? "حالت روشن" : "حالت تاریک"}
+        style={{ width: 38, height: 38, borderRadius: 10, border: `1px solid ${T.border}`, background: T.surface2, color: T.text2, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", transition: "all 0.18s", marginBottom: 6 }}>
+        {isDark
+          ? <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="5" /><line x1="12" y1="1" x2="12" y2="3" /><line x1="12" y1="21" x2="12" y2="23" /><line x1="4.22" y1="4.22" x2="5.64" y2="5.64" /><line x1="18.36" y1="18.36" x2="19.78" y2="19.78" /><line x1="1" y1="12" x2="3" y2="12" /><line x1="21" y1="12" x2="23" y2="12" /><line x1="4.22" y1="19.78" x2="5.64" y2="18.36" /><line x1="18.36" y1="5.64" x2="19.78" y2="4.22" /></svg>
+          : <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z" /></svg>}
+      </button>
+      {/* Logout */}
+      <button onClick={onLogout} title="خروج"
+        style={{ width: 38, height: 38, borderRadius: 10, border: `1px solid ${T.dangerBorder}`, background: T.dangerBg, color: T.danger, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", transition: "all 0.18s" }}>
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+      </button>
+    </div>
+  );
+}
+
+// ── Main App ──────────────────────────────────────────────────────────────────
+
 export default function App() {
-  const [page, setPage] = useState("main");
-  const [step, setStep] = useState("upload");
+  const [session, setSession] = useState<SessionUser | null>(() => {
+    try {
+      const raw = localStorage.getItem(SESSION_KEY);
+      if (!raw) return null;
+      const parsed = JSON.parse(raw) as SessionUser & { loginAt?: number };
+      // Expire after 7 days
+      if (parsed.loginAt && Date.now() - parsed.loginAt > 7 * 86400 * 1000) {
+        localStorage.removeItem(SESSION_KEY); return null;
+      }
+      return parsed;
+    } catch { return null; }
+  });
+
+  const handleLogout = () => {
+    localStorage.removeItem(SESSION_KEY);
+    setSession(null);
+    setRefData(null);
+  };
+
+  const [refData, setRefData] = useState<RefMap | null>(null);
+  const [refLoading, setRefLoading] = useState(false);
+  const [refError, setRefError] = useState(false);
+
+  useEffect(() => {
+    if (!session || refData) return;
+    setRefLoading(true); setRefError(false);
+    loadRefData()
+      .then(m => { setRefData(m); setRefLoading(false); })
+      .catch(() => { setRefLoading(false); setRefError(true); });
+  }, [session]);
+
+  const [isDark, setIsDark] = useState(() => {
+    try { return localStorage.getItem(THEME_KEY) === "dark"; } catch { return false; }
+  });
+  const T = isDark ? DARK : LIGHT;
+
+  useEffect(() => { try { localStorage.setItem(THEME_KEY, isDark ? "dark" : "light"); } catch { } }, [isDark]);
+
+  const [screen, setScreen] = useState("upload");
+  const [step, setStep] = useState<"upload" | "ready" | "loading" | "preview">("upload");
   const [csvData, setCsvData] = useState<{ text: string; rows: Record<string, string>[]; name: string; stats: ReturnType<typeof getStats> } | null>(null);
   const [result, setResult] = useState<AnalysisResult | null>(null);
   const [pendingSave, setPendingSave] = useState<{ date: string; dateLabel: string; names: string[] } | null>(null);
   const [saveStatus, setSaveStatus] = useState("");
   const [editableMsg, setEditableMsg] = useState("");
-  const [loading, setLoading] = useState(false);
   const [regenLoading, setRegenLoading] = useState<string | null>(null);
   const [dragOver, setDragOver] = useState(false);
   const [errMsg, setErrMsg] = useState("");
@@ -324,11 +583,17 @@ export default function App() {
   const [filterAgency, setFilterAgency] = useState("all");
   const [sortBy, setSortBy] = useState("importance");
   const [selectedTemplate, setSelectedTemplate] = useState("standard");
-  const [expandedCard, setExpandedCard] = useState<string | null>(null);
-  const [compareReport, setCompareReport] = useState<AnalysisResult | null>(null);
-  const [compareMode, setCompareMode] = useState(false);
+  const [resultsTab, setResultsTab] = useState<"advertisers" | "leads" | "competitors" | "industry">("advertisers");
+  const [modalAdv, setModalAdv] = useState<{ adv: Advertiser; type: string } | null>(null);
+  const [toast, setToast] = useState<{ msg: string; type: "success" | "error" } | null>(null);
+  const [loadingProgress, setLoadingProgress] = useState(0);
+  const loadingTimer = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => { loadHistory(); loadReports(); }, []);
+
+  const showToast = (msg: string, type: "success" | "error" = "success") => {
+    setToast({ msg, type });
+  };
 
   const loadHistory = () => {
     try { const r = localStorage.getItem(HISTORY_KEY); if (r) setHistory(JSON.parse(r)); } catch { setHistory([]); }
@@ -349,10 +614,11 @@ export default function App() {
       const rep: AnalysisResult = { ...result!, savedAt: Date.now(), id: pendingSave.date };
       const reps = [...savedReports.filter(r => r.id !== rep.id), rep].slice(-10);
       localStorage.setItem(REPORTS_KEY, JSON.stringify(reps)); setSavedReports(reps);
-      setPendingSave(null); setSaveStatus("saved"); setTimeout(() => setSaveStatus(""), 3000);
-    } catch { setSaveStatus("error"); }
+      setPendingSave(null); setSaveStatus("saved");
+      showToast("گزارش ذخیره شد ✓");
+    } catch { showToast("خطا در ذخیره", "error"); }
   };
-  const deleteEntry = (date: string) => { try { persistHistory(history.filter(h => h.date !== date)); } catch { } };
+  const deleteHistoryEntry = (date: string) => { try { persistHistory(history.filter(h => h.date !== date)); } catch { } };
   const clearHistory = () => { try { persistHistory([]); } catch { } };
   const uniqueReported = [...new Set(history.flatMap(h => h.names))];
 
@@ -402,29 +668,68 @@ export default function App() {
         if (!trimmed.startsWith("data: ")) continue;
         const payload = trimmed.slice(6);
         if (payload === "[DONE]") break outer;
-        try { const chunk = JSON.parse(payload); const delta = chunk.choices?.[0]?.delta?.content; if (delta) raw += delta; } catch { /* partial chunk */ }
+        try { const chunk = JSON.parse(payload); const delta = chunk.choices?.[0]?.delta?.content; if (delta) raw += delta; } catch { }
       }
     }
     setRawDebug(raw);
-    if (!raw || raw.length < 5) throw new Error("پاسخ خالی");
-    const advertisers = extractBlocks("ADVERTISER", raw).map(b => { const f = parseFields(b); const n = f.NAME || ""; return { name: n, ownerid: f.OWNERID || "", manager: managerMap[n] || "", summary: f.SUMMARY || "", agencies: parseAgencies(f.AGENCIES) }; });
-    const leads = extractBlocks("LEAD", raw).map(b => { const f = parseFields(b); const n = f.NAME || ""; return { name: n, ownerid: f.OWNERID || "", manager: managerMap[n] || "", note: f.NOTE || "", agencies: parseAgencies(f.AGENCIES) }; });
+    if (!raw || raw.length < 5) throw new Error("پاسخ خالی از API");
+    const enrichIndustry = (ownerid: string) => {
+      const ref = refData?.get(ownerid);
+      return { industry1: ref?.industry1 || "", industry2: ref?.industry2 || "" };
+    };
+    const advertisers = extractBlocks("ADVERTISER", raw).map(b => { const f = parseFields(b); const n = f.NAME || ""; const id = f.OWNERID || ""; return { name: n, ownerid: id, manager: managerMap[n] || "", summary: f.SUMMARY || "", agencies: parseAgencies(f.AGENCIES), ...enrichIndustry(id) }; });
+    const leads = extractBlocks("LEAD", raw).map(b => { const f = parseFields(b); const n = f.NAME || ""; const id = f.OWNERID || ""; return { name: n, ownerid: id, manager: managerMap[n] || "", note: f.NOTE || "", agencies: parseAgencies(f.AGENCIES), ...enrichIndustry(id) }; });
     const competitors = extractBlocks("COMPETITOR", raw).map(b => { const f = parseFields(b); return { platform: f.PLATFORM || "", newclients: f.NEWCLIENTS || "", topclients: f.TOPCLIENTS || "", note: f.NOTE || "" }; });
     const market = (extractBlocks("MARKET", raw)[0] || "").trim();
     const disclaimer = (extractBlocks("DISCLAIMER", raw)[0] || "داده‌ها بر اساس کراول وب هستن و تخمینی‌اند — روندها قابل اعتمادند اما اعداد دقیق نیستن.").trim();
     return { dateLabel: todayLabel(), advertisers, leads, competitors, market, disclaimer };
   };
 
+  const startLoadingProgress = () => {
+    setLoadingProgress(0);
+    loadingTimer.current = setInterval(() => {
+      setLoadingProgress(p => {
+        if (p >= 88) { if (loadingTimer.current) clearInterval(loadingTimer.current); return 88; }
+        return p + (88 - p) * 0.04 + 0.5;
+      });
+    }, 300);
+  };
+  const stopLoadingProgress = () => {
+    if (loadingTimer.current) clearInterval(loadingTimer.current);
+    setLoadingProgress(100);
+  };
+
+  const filterRowsByManager = (rows: Record<string, string>[]): Record<string, string>[] => {
+    if (!session || session.isAdmin) return rows;
+    const teamEn = session.teamEn.toLowerCase();
+    // Try manager_team column first
+    const byTeam = rows.filter(r => (r.manager_team || r.team || "").toLowerCase().includes(teamEn));
+    if (byTeam.length > 0) return byTeam;
+    // Fallback: match by manager last name in account_manager_name column
+    const lastName = session.managerEn.split(" ").pop()?.toLowerCase() || "";
+    const byName = rows.filter(r => (r.account_manager_name || "").toLowerCase().includes(lastName));
+    return byName.length > 0 ? byName : rows; // last resort: all rows
+  };
+
   const analyze = async () => {
-    setLoading(true); setErrMsg(""); setRawDebug(""); setShowDebug(false);
+    setErrMsg(""); setRawDebug(""); setShowDebug(false); setStep("loading"); setScreen("upload");
+    startLoadingProgress();
     try {
-      const parsed = await runAnalysis(csvData!.text, csvData!.rows, selectedTemplate);
-      if (!parsed.advertisers.length && !parsed.leads.length && !parsed.competitors.length) { setErrMsg("هیچ بلاکی پارس نشد"); setShowDebug(true); setLoading(false); return; }
+      const filteredRows = filterRowsByManager(csvData!.rows);
+      const filteredCsv = filteredRows.map(r => Object.values(r).join(",")).join("\n");
+      const csvHeader = Object.keys(filteredRows[0] || {}).join(",");
+      const parsed = await runAnalysis(csvHeader + "\n" + filteredCsv, filteredRows, selectedTemplate);
+      stopLoadingProgress();
+      if (!parsed.advertisers.length && !parsed.leads.length && !parsed.competitors.length) {
+        setErrMsg("هیچ بلاکی پارس نشد — پاسخ خام در دیباگ"); setShowDebug(true); setStep("ready"); return;
+      }
       setResult(parsed); setEditableMsg(buildMessage(parsed));
       setPendingSave({ date: csvData!.stats.lastDate, dateLabel: parsed.dateLabel, names: [...parsed.advertisers.map(a => a.name), ...parsed.leads.map(l => l.name)] });
-      setSaveStatus(""); setStep("preview"); setSearchQuery(""); setFilterAgency("all");
-    } catch (e) { setErrMsg("خطا: " + (e as Error).message); }
-    finally { setLoading(false); }
+      setSaveStatus(""); setStep("preview"); setScreen("results"); setResultsTab("advertisers"); setSearchQuery(""); setFilterAgency("all");
+    } catch (e) {
+      stopLoadingProgress(); setErrMsg("خطا: " + (e as Error).message); setStep("ready");
+      showToast("خطا در دریافت پاسخ", "error");
+    }
   };
 
   const regenOne = async (item: Advertiser, type: string) => {
@@ -437,13 +742,13 @@ export default function App() {
       if (newItems.length > 0) {
         const updated = type === "lead" ? result!.leads.map(l => l.name === item.name ? newItems[0] : l) : result!.advertisers.map(a => a.name === item.name ? newItems[0] : a);
         const nr: AnalysisResult = type === "lead" ? { ...result!, leads: updated } : { ...result!, advertisers: updated };
-        setResult(nr); setEditableMsg(buildMessage(nr));
+        setResult(nr); setEditableMsg(buildMessage(nr)); setModalAdv(null);
       }
-    } catch (e) { console.error(e); }
+    } catch (e) { showToast("خطا در بازسازی", "error"); console.error(e); }
     finally { setRegenLoading(null); }
   };
 
-  const reset = () => { setCsvData(null); setResult(null); setPendingSave(null); setStep("upload"); setErrMsg(""); setRawDebug(""); setShowDebug(false); setSaveStatus(""); setExpandedCard(null); setSearchQuery(""); setFilterAgency("all"); };
+  const reset = () => { setCsvData(null); setResult(null); setPendingSave(null); setStep("upload"); setErrMsg(""); setRawDebug(""); setShowDebug(false); setSaveStatus(""); setSearchQuery(""); setFilterAgency("all"); setScreen("upload"); };
 
   const allAgencies = useMemo(() => { if (!result) return []; const s = new Set<string>(); result.advertisers.forEach(a => a.agencies.forEach(ag => s.add(ag.name))); return [...s]; }, [result]);
   const filteredAdvertisers = useMemo(() => {
@@ -456,351 +761,432 @@ export default function App() {
     return items;
   }, [result, searchQuery, filterAgency, sortBy]);
 
-  const navA: React.CSSProperties = { fontSize: 13, fontWeight: 500, padding: "8px 14px", borderRadius: 8, border: "none", cursor: "pointer", background: C.coral, color: "#fff" };
-  const navI: React.CSSProperties = { fontSize: 13, padding: "8px 14px", borderRadius: 8, border: "none", cursor: "pointer", background: "transparent", color: C.t2 };
-  const btn = (x: React.CSSProperties = {}): React.CSSProperties => ({ padding: "8px 14px", borderRadius: 10, border: `0.5px solid ${C.border2}`, background: "transparent", color: C.t1, fontSize: 12, cursor: "pointer", ...x });
+  const card = (extra: React.CSSProperties = {}): React.CSSProperties => ({ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 16, ...extra });
+  const btnStyle = (extra: React.CSSProperties = {}): React.CSSProperties => ({ padding: "8px 16px", borderRadius: 10, border: `1px solid ${T.border}`, background: "transparent", color: T.text2, fontSize: 12, cursor: "pointer", ...extra });
 
+  // ─ Advertiser card ─────────────────────────────────────────────────────────
   const AdvCard = ({ adv, type = "advertiser" }: { adv: Advertiser; type?: string }) => {
-    const isExp = expandedCard === adv.name, isRegen = regenLoading === adv.name;
     const total = adv.agencies.reduce((s, a) => s + a.value, 0);
     const ykt = adv.agencies.find(a => a.name === "یکتانت");
     const yPct = total > 0 && ykt ? Math.round(ykt.value / total * 100) : 0;
-    const yColor = yPct >= 60 ? C.coral : yPct >= 40 ? C.amber : C.danger;
-    const cmpAdv = compareReport?.[type === "lead" ? "leads" : "advertisers"]?.find(a => a.name === adv.name);
-    const cmpPct = cmpAdv ? (() => { const ct = cmpAdv.agencies.reduce((s, a) => s + a.value, 0); const cy = cmpAdv.agencies.find(a => a.name === "یکتانت"); return ct > 0 && cy ? Math.round(cy.value / ct * 100) : 0; })() : null;
+    const accent = type === "lead" ? T.green : T.coral;
+    const accentDim = type === "lead" ? T.greenDim : T.coralDim;
+    const accentBorder = type === "lead" ? T.greenBorder : T.coralBorder;
     return (
-      <div style={{ display: "flex", gap: 14, marginBottom: 10 }}>
-        <div style={{ flexShrink: 0, zIndex: 1, marginTop: 2 }}>
-          <div style={{ width: 36, height: 36, borderRadius: 9, background: type === "lead" ? C.greenDim : C.coralDim, border: `1.5px solid ${type === "lead" ? "rgba(29,158,117,0.2)" : C.coralBorder}`, display: "flex", alignItems: "center", justifyContent: "center" }}>
-            {type === "lead"
-              ? <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={C.green} strokeWidth="1.5"><circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="16" /><line x1="8" y1="12" x2="16" y2="12" /></svg>
-              : <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={C.coral} strokeWidth="1.5"><path d="M20 7H4a2 2 0 00-2 2v6a2 2 0 002 2h16a2 2 0 002-2V9a2 2 0 00-2-2z" /></svg>}
+      <div onClick={() => setModalAdv({ adv, type })} style={{ ...card({ padding: "14px 16px", cursor: "pointer", display: "flex", alignItems: "center", gap: 16, transition: "border-color 0.15s" }), borderColor: T.border }}
+        onMouseEnter={e => (e.currentTarget.style.borderColor = accentBorder)}
+        onMouseLeave={e => (e.currentTarget.style.borderColor = T.border)}
+        className="fade-up">
+        <AgencyDonut agencies={adv.agencies} size={64} />
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 4 }}>
+            <span style={{ fontSize: 14, fontWeight: 600, color: T.text1, direction: "ltr" }}>{adv.name}</span>
+            <span style={{ fontSize: 11, color: T.text3 }}>#{adv.ownerid}</span>
+            {adv.manager && <span style={{ fontSize: 11, color: accent, background: accentDim, border: `1px solid ${accentBorder}`, padding: "1px 8px", borderRadius: 20 }}>{adv.manager}</span>}
+            {adv.industry1 && <span style={{ fontSize: 10, color: T.blue, background: T.blueDim, padding: "1px 7px", borderRadius: 20, border: `1px solid rgba(74,158,232,0.2)` }}>{adv.industry1}</span>}
           </div>
+          <p style={{ margin: "0 0 8px", fontSize: 12, color: T.text2, lineHeight: 1.7, display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>
+            {type === "lead" ? adv.note : adv.summary}
+          </p>
+          <AgencyLegend agencies={adv.agencies} T={T} />
         </div>
-        <div style={{ flex: 1, background: C.white, border: `0.5px solid ${isExp ? C.coralBorder : C.border}`, borderRadius: 13, padding: "0.9rem 1.1rem", cursor: "pointer", transition: "border-color 0.2s" }} onClick={() => setExpandedCard(isExp ? null : adv.name)}>
-          <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 8 }}>
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 7, flexWrap: "wrap" }}>
-                <span style={{ fontWeight: 500, fontSize: 13, color: C.t1, direction: "ltr" }}>{adv.name}</span>
-                <span style={{ fontSize: 11, color: C.t3, direction: "ltr" }}>#{adv.ownerid}</span>
-                {adv.manager && <span style={{ fontSize: 11, color: C.coral, background: C.coralDim, padding: "1px 6px", borderRadius: 20 }}>{adv.manager}</span>}
-              </div>
-              {total > 0 && <div style={{ display: "flex", alignItems: "center", gap: 7, marginTop: 5 }}>
-                <div style={{ flex: 1, height: 4, borderRadius: 2, background: C.bg, overflow: "hidden" }}>
-                  <div style={{ width: `${yPct}%`, height: "100%", background: C.coral, borderRadius: 2, transition: "width 0.4s" }} />
-                </div>
-                <span style={{ fontSize: 11, fontWeight: 500, color: yColor, flexShrink: 0 }}>
-                  یکتانت {yPct}٪
-                  {cmpPct !== null && <span style={{ fontSize: 10, color: yPct > cmpPct ? C.green : C.danger, marginRight: 3 }}>{yPct > cmpPct ? `▲+${yPct - cmpPct}` : `▼${yPct - cmpPct}`}٪</span>}
-                </span>
-              </div>}
+        {yPct > 0 && (
+          <div style={{ textAlign: "center", flexShrink: 0 }}>
+            <div style={{ fontSize: 20, fontWeight: 700, color: yPct >= 50 ? T.coral : yPct >= 30 ? T.amber : T.danger }}>{yPct}٪</div>
+            <div style={{ fontSize: 10, color: T.text3 }}>یکتانت</div>
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  // ─ Loading screen ───────────────────────────────────────────────────────────
+  const LoadingScreen = () => (
+    <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", minHeight: "60vh", gap: 28 }}>
+      <RadarHero T={T} />
+      <div style={{ width: "100%", maxWidth: 320 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
+          <span style={{ fontSize: 13, color: T.text2 }}>در حال آنالیز داده‌ها...</span>
+          <span style={{ fontSize: 13, color: T.coral, fontWeight: 600 }}>{Math.round(loadingProgress)}٪</span>
+        </div>
+        <div style={{ height: 4, background: T.border, borderRadius: 4, overflow: "hidden" }}>
+          <div style={{ height: "100%", background: T.coral, borderRadius: 4, width: `${loadingProgress}%`, transition: "width 0.4s ease" }} />
+        </div>
+      </div>
+      <p style={{ margin: 0, fontSize: 12, color: T.text3 }}>Claude در حال بررسی رقابت بازار است</p>
+    </div>
+  );
+
+  // ─ Upload screen ────────────────────────────────────────────────────────────
+  const UploadScreen = () => (
+    <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+      {step === "loading" ? <LoadingScreen /> : step === "upload" ? (
+        <>
+          <div style={{ textAlign: "center", paddingTop: 20 }}>
+            <RadarHero T={T} />
+            <h1 style={{ margin: "0 0 8px", fontSize: 22, fontWeight: 700, color: T.text1, letterSpacing: "-0.3px" }}>Radar</h1>
+            <p style={{ margin: 0, fontSize: 14, color: T.text3 }}>آنالیز رقابتی روزانه یکتانت</p>
+          </div>
+          <div onDrop={onDrop} onDragOver={e => { e.preventDefault(); setDragOver(true); }} onDragLeave={() => setDragOver(false)} onClick={() => document.getElementById("fi")!.click()}
+            style={{ border: `2px dashed ${dragOver ? T.coral : T.border}`, borderRadius: 20, padding: "2.5rem 1.5rem", textAlign: "center", cursor: "pointer", background: dragOver ? T.coralDim : "transparent", transition: "all 0.2s" }}>
+            <div style={{ width: 52, height: 52, borderRadius: 14, background: dragOver ? T.coral : T.surface2, border: `1px solid ${T.border}`, margin: "0 auto 14px", display: "flex", alignItems: "center", justifyContent: "center", transition: "all 0.2s" }}>
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke={dragOver ? "#fff" : T.coral} strokeWidth="1.5"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4" /><polyline points="17 8 12 3 7 8" /><line x1="12" y1="3" x2="12" y2="15" /></svg>
             </div>
-            <div style={{ display: "flex", alignItems: "center", gap: 5, flexShrink: 0 }}>
-              <button onClick={e => { e.stopPropagation(); regenOne(adv, type); }} disabled={!!regenLoading} style={{ padding: "3px 7px", borderRadius: 6, border: `0.5px solid ${C.border}`, background: "transparent", cursor: "pointer", color: C.t3, fontSize: 11, display: "flex", alignItems: "center" }}>
-                {isRegen ? <svg width="11" height="11" viewBox="0 0 24 24" fill="none" style={{ animation: "spin 0.8s linear infinite" }}><circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="2" strokeDasharray="31" strokeDashoffset="10" /></svg> : <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="23 4 23 10 17 10" /><path d="M20.49 15a9 9 0 11-2.12-9.36L23 10" /></svg>}
-              </button>
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke={C.mist} strokeWidth="2" style={{ transform: isExp ? "rotate(180deg)" : "rotate(0)", transition: "transform 0.2s" }}><polyline points="6 9 12 15 18 9" /></svg>
+            <p style={{ margin: "0 0 5px", fontWeight: 600, fontSize: 15, color: T.text1 }}>فایل را بکشید یا کلیک کنید</p>
+            <p style={{ margin: 0, fontSize: 12, color: T.text3 }}>CSV یا XLSX · داده‌های رقابتی یکتانت</p>
+            <input id="fi" type="file" accept=".csv,.xlsx,.xls" style={{ display: "none" }} onChange={e => handleFile(e.target.files![0])} />
+          </div>
+          {uniqueReported.length > 0 && (
+            <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 14px", background: T.coralDim, border: `1px solid ${T.coralBorder}`, borderRadius: 12 }}>
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke={T.coral} strokeWidth="2"><circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" /></svg>
+              <p style={{ margin: 0, fontSize: 12, color: T.coral }}>{uniqueReported.length} تبلیغ‌کننده از ۵ روز اخیر skip می‌شن</p>
+            </div>
+          )}
+        </>
+      ) : (
+        // Ready step
+        <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+          <div style={card({ padding: "16px 20px" })}>
+            <div style={{ display: "flex", alignItems: "center", gap: 14, marginBottom: 16 }}>
+              <div style={{ width: 40, height: 40, borderRadius: 11, background: T.coralDim, border: `1px solid ${T.coralBorder}`, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke={T.coral} strokeWidth="1.5"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" /><polyline points="14 2 14 8 20 8" /></svg>
+              </div>
+              <div style={{ flex: 1 }}>
+                <p style={{ margin: 0, fontWeight: 600, fontSize: 14, color: T.text1 }}>{csvData!.name}</p>
+                <p style={{ margin: "2px 0 0", fontSize: 12, color: T.text3 }}>{csvData!.rows.length.toLocaleString()} ردیف · {csvData!.stats.dates.length} روز</p>
+              </div>
+              <button onClick={() => { setCsvData(null); setStep("upload"); }} style={btnStyle()}>تغییر</button>
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 10 }}>
+              {[{ l: "تبلیغ‌کننده", v: csvData!.stats.advertisers }, { l: "روزها", v: csvData!.stats.dates.length }, { l: "آخرین تاریخ", v: csvData!.stats.lastDate }].map((c, i) => (
+                <div key={i} style={{ background: T.surface2, borderRadius: 10, padding: "10px 12px" }}>
+                  <p style={{ margin: "0 0 3px", fontSize: 11, color: T.text3 }}>{c.l}</p>
+                  <p style={{ margin: 0, fontSize: 13, fontWeight: 600, color: T.text1, direction: "ltr", textAlign: "right" }}>{c.v}</p>
+                </div>
+              ))}
             </div>
           </div>
-          {isExp && <div style={{ marginTop: 9, borderTop: `0.5px solid ${C.border}`, paddingTop: 9 }}>
-            <p style={{ margin: "0 0 8px", fontSize: 13, color: C.t2, lineHeight: 1.9 }}>{type === "lead" ? adv.note : adv.summary}</p>
-            <AgencyBar agencies={adv.agencies} />
-            {cmpAdv && <div style={{ marginTop: 10, padding: "8px 10px", background: C.bg, borderRadius: 8 }}>
-              <p style={{ margin: "0 0 4px", fontSize: 11, color: C.t3 }}>مقایسه با گزارش قبلی:</p>
-              <AgencyBar agencies={cmpAdv.agencies} />
-            </div>}
+
+          <div style={card({ padding: "14px 18px" })}>
+            <p style={{ margin: "0 0 12px", fontSize: 11, fontWeight: 600, color: T.text3, textTransform: "uppercase", letterSpacing: "0.08em" }}>قالب گزارش</p>
+            <div style={{ display: "flex", gap: 8 }}>
+              {Object.entries(TEMPLATES).map(([key, t]) => (
+                <button key={key} onClick={() => setSelectedTemplate(key)} style={{ flex: 1, padding: "10px 8px", borderRadius: 11, border: `1.5px solid ${selectedTemplate === key ? T.coral : T.border}`, background: selectedTemplate === key ? T.coralDim : "transparent", cursor: "pointer", transition: "all 0.18s" }}>
+                  <p style={{ margin: "0 0 3px", fontSize: 13, fontWeight: selectedTemplate === key ? 600 : 400, color: selectedTemplate === key ? T.coral : T.text1 }}>{t.label}</p>
+                  <p style={{ margin: 0, fontSize: 11, color: T.text3 }}>{t.desc}</p>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <button onClick={analyze} style={{ padding: "14px", borderRadius: 14, border: "none", background: T.coral, color: "#fff", fontSize: 15, fontWeight: 600, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 10, transition: "opacity 0.2s" }}
+            onMouseEnter={e => (e.currentTarget.style.opacity = "0.88")}
+            onMouseLeave={e => (e.currentTarget.style.opacity = "1")}>
+            شروع آنالیز
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="5" y1="12" x2="19" y2="12" /><polyline points="12 5 19 12 12 19" /></svg>
+          </button>
+
+          {errMsg && <div style={{ padding: "12px 16px", borderRadius: 12, background: T.dangerBg, border: `1px solid ${T.dangerBorder}` }}>
+            <p style={{ margin: 0, fontSize: 13, color: T.danger }}>{errMsg}</p>
           </div>}
+          {showDebug && rawDebug && <pre style={{ margin: 0, fontSize: 11, color: T.text1, background: T.surface2, padding: 12, borderRadius: 10, whiteSpace: "pre-wrap", direction: "ltr", textAlign: "left", maxHeight: 200, overflow: "auto" }}>{rawDebug}</pre>}
+        </div>
+      )}
+    </div>
+  );
+
+  // ─ Results screen ───────────────────────────────────────────────────────────
+  const ResultsScreen = () => {
+    if (!result) return <div style={{ textAlign: "center", padding: "4rem", color: T.text3, fontSize: 14 }}>هنوز آنالیزی انجام نشده</div>;
+
+    // Industry stats from result + refData
+    type IndustryStat = { name: string; advertisers: Advertiser[]; leads: Advertiser[]; avgYkt: number; topCompetitor: string };
+    const industryMap = new Map<string, { advs: Advertiser[]; leads: Advertiser[] }>();
+    [...result.advertisers, ...result.leads].forEach(a => {
+      const ind = a.industry1 || "سایر";
+      if (!industryMap.has(ind)) industryMap.set(ind, { advs: [], leads: [] });
+      if (result.advertisers.includes(a)) industryMap.get(ind)!.advs.push(a);
+      else industryMap.get(ind)!.leads.push(a);
+    });
+    const industryStats: IndustryStat[] = [...industryMap.entries()].map(([name, { advs, leads }]) => {
+      const yktPcts = advs.map(a => { const t = a.agencies.reduce((s, x) => s + x.value, 0); const y = a.agencies.find(x => x.name === "یکتانت"); return t > 0 && y ? y.value / t : 0; });
+      const avgYkt = yktPcts.length > 0 ? Math.round(yktPcts.reduce((a, b) => a + b, 0) / yktPcts.length * 100) : 0;
+      const compCount: Record<string, number> = {};
+      advs.forEach(a => a.agencies.filter(x => x.name !== "یکتانت").forEach(x => { compCount[x.name] = (compCount[x.name] || 0) + x.value; }));
+      const topCompetitor = Object.entries(compCount).sort((a, b) => b[1] - a[1])[0]?.[0] || "";
+      return { name, advertisers: advs, leads, avgYkt, topCompetitor };
+    }).sort((a, b) => (b.advertisers.length + b.leads.length) - (a.advertisers.length + a.leads.length));
+
+    const hasIndustry = industryStats.some(s => s.name !== "سایر");
+    const tabs: { id: "advertisers" | "leads" | "competitors" | "industry"; label: string; count: number }[] = [
+      { id: "advertisers", label: "تبلیغ‌کننده‌ها", count: result.advertisers.length },
+      { id: "leads", label: "لیدها", count: result.leads.length },
+      { id: "competitors", label: "رقبا", count: result.competitors.length },
+      ...(hasIndustry ? [{ id: "industry" as const, label: "صنعت", count: industryStats.length }] : []),
+    ];
+    return (
+      <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+        {/* Stats row */}
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 14 }}>
+          {[{ l: "تاریخ", v: result.dateLabel, c: T.text1 }, { l: "تبلیغ‌کننده", v: result.advertisers.length, c: T.coral }, { l: "لید", v: result.leads.length, c: T.green }, { l: "رقیب", v: result.competitors.length, c: T.amber }].map((s, i) => (
+            <div key={i} style={card({ padding: "16px 20px" })}>
+              <p style={{ margin: "0 0 6px", fontSize: 12, color: T.text3 }}>{s.l}</p>
+              <p style={{ margin: 0, fontSize: i === 0 ? 14 : 28, fontWeight: 700, color: s.c }}>{s.v}</p>
+            </div>
+          ))}
+        </div>
+
+        {/* Save prompt */}
+        {pendingSave && saveStatus !== "saved" && (
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 16px", background: T.coralDim, border: `1px solid ${T.coralBorder}`, borderRadius: 14 }}>
+            <div>
+              <p style={{ margin: "0 0 2px", fontSize: 13, fontWeight: 600, color: T.text1 }}>این گزارش ذخیره نشده</p>
+              <p style={{ margin: 0, fontSize: 12, color: T.text3 }}>{pendingSave.names.length} تبلیغ‌کننده</p>
+            </div>
+            <button onClick={confirmSave} style={{ padding: "8px 18px", borderRadius: 10, border: "none", background: T.coral, color: "#fff", fontSize: 13, fontWeight: 600, cursor: "pointer" }}>ذخیره</button>
+          </div>
+        )}
+
+        {/* Tabs */}
+        <div style={{ display: "flex", gap: 4, background: T.surface2, borderRadius: 12, padding: 4 }}>
+          {tabs.map(tab => (
+            <button key={tab.id} onClick={() => setResultsTab(tab.id)}
+              style={{ flex: 1, padding: "9px 8px", borderRadius: 9, border: "none", cursor: "pointer", background: resultsTab === tab.id ? T.surface : "transparent", color: resultsTab === tab.id ? T.text1 : T.text3, fontSize: 13, fontWeight: resultsTab === tab.id ? 600 : 400, transition: "all 0.18s", display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
+              {tab.label}
+              <span style={{ fontSize: 11, background: resultsTab === tab.id ? T.coralDim : "transparent", color: resultsTab === tab.id ? T.coral : T.text3, padding: "1px 7px", borderRadius: 20, fontWeight: 600 }}>{tab.count}</span>
+            </button>
+          ))}
+        </div>
+
+        {/* Tab content */}
+        {resultsTab === "advertisers" && (
+          <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+            <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+              <input value={searchQuery} onChange={e => setSearchQuery(e.target.value)} placeholder="جستجو..." style={{ flex: 1, minWidth: 140, fontSize: 14, padding: "10px 14px", borderRadius: 11, border: `1px solid ${T.border}`, background: T.surface, color: T.text1, direction: "rtl", outline: "none" }} />
+              <select value={filterAgency} onChange={e => setFilterAgency(e.target.value)} style={{ fontSize: 13, padding: "10px 12px", borderRadius: 11, border: `1px solid ${T.border}`, background: T.surface, color: T.text1, cursor: "pointer" }}>
+                <option value="all">همه آژانس‌ها</option>
+                {allAgencies.map(a => <option key={a} value={a}>{a}</option>)}
+              </select>
+              <select value={sortBy} onChange={e => setSortBy(e.target.value)} style={{ fontSize: 13, padding: "10px 12px", borderRadius: 11, border: `1px solid ${T.border}`, background: T.surface, color: T.text1, cursor: "pointer" }}>
+                <option value="importance">اهمیت</option>
+                <option value="volume">حجم</option>
+                <option value="yektanet">سهم یکتانت</option>
+              </select>
+            </div>
+            {filteredAdvertisers.length === 0
+              ? <div style={{ textAlign: "center", padding: "3rem", color: T.text3, fontSize: 14 }}>نتیجه‌ای یافت نشد</div>
+              : <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(420px, 1fr))", gap: 12 }}>
+                  {filteredAdvertisers.map((adv, i) => <AdvCard key={i} adv={adv} type="advertiser" />)}
+                </div>}
+          </div>
+        )}
+
+        {resultsTab === "leads" && (
+          <div>
+            {result.leads.length === 0
+              ? <div style={{ textAlign: "center", padding: "3rem", color: T.text3, fontSize: 14 }}>لیدی یافت نشد</div>
+              : <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(420px, 1fr))", gap: 12 }}>
+                  {result.leads.map((l, i) => <AdvCard key={i} adv={l} type="lead" />)}
+                </div>}
+          </div>
+        )}
+
+        {resultsTab === "competitors" && (
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(380px, 1fr))", gap: 12 }}>
+            {result.competitors.length === 0
+              ? <div style={{ textAlign: "center", padding: "3rem", color: T.text3, fontSize: 13 }}>رقیبی یافت نشد</div>
+              : result.competitors.map((c, i) => (
+                <div key={i} style={card({ padding: "16px 18px" })} className="fade-up">
+                  <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
+                    <div style={{ width: 36, height: 36, borderRadius: 10, background: T.amberDim, border: `1px solid ${T.amberBorder}`, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={T.amber} strokeWidth="1.8"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12" /></svg>
+                    </div>
+                    <span style={{ fontSize: 15, fontWeight: 700, color: T.amber }}>{c.platform}</span>
+                  </div>
+                  <p style={{ margin: "0 0 8px", fontSize: 13, color: T.text2, lineHeight: 1.8 }}>{c.note}</p>
+                  {c.topclients && <p style={{ margin: "4px 0 0", fontSize: 12, color: T.text3 }}>مهم‌ترین: <span style={{ color: T.text2 }}>{c.topclients}</span></p>}
+                  {c.newclients && c.newclients !== "ندارد" && <p style={{ margin: "4px 0 0", fontSize: 12, color: T.green }}>جدید: {c.newclients}</p>}
+                </div>
+              ))}
+            {result.market && (
+              <div style={{ ...card({ padding: "16px 18px" }), gridColumn: "1 / -1" }}>
+                <p style={{ margin: "0 0 8px", fontSize: 12, fontWeight: 600, color: T.text3, textTransform: "uppercase", letterSpacing: "0.08em" }}>تحلیل کلی بازار</p>
+                <p style={{ margin: 0, fontSize: 14, color: T.text2, lineHeight: 1.9 }}>{result.market}</p>
+              </div>
+            )}
+          </div>
+        )}
+
+        {resultsTab === "industry" && (
+          <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+            {industryStats.length === 0
+              ? <div style={{ textAlign: "center", padding: "4rem", color: T.text3, fontSize: 14 }}>اطلاعات صنعتی موجود نیست — ابتدا اطلاعات مرجع بارگذاری شود</div>
+              : industryStats.map((s, i) => {
+                const total = s.advertisers.length + s.leads.length;
+                const yktColor = s.avgYkt >= 50 ? T.coral : s.avgYkt >= 30 ? T.amber : T.danger;
+                return (
+                  <div key={i} style={card({ padding: "16px 20px" })} className="fade-up">
+                    <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12, marginBottom: 12 }}>
+                      <div style={{ flex: 1 }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+                          <span style={{ fontSize: 15, fontWeight: 700, color: T.text1 }}>{s.name}</span>
+                          <span style={{ fontSize: 11, color: T.text3, background: T.surface2, padding: "2px 9px", borderRadius: 20 }}>{total} اکانت</span>
+                          {s.leads.length > 0 && <span style={{ fontSize: 11, color: T.green, background: T.greenDim, padding: "2px 9px", borderRadius: 20 }}>{s.leads.length} لید</span>}
+                          {s.topCompetitor && <span style={{ fontSize: 11, color: T.amber, background: T.amberDim, padding: "2px 9px", borderRadius: 20 }}>رقیب اصلی: {s.topCompetitor}</span>}
+                        </div>
+                        <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 10 }}>
+                          <div style={{ flex: 1, height: 6, borderRadius: 3, background: T.border, overflow: "hidden" }}>
+                            <div style={{ width: `${s.avgYkt}%`, height: "100%", background: yktColor, borderRadius: 3, transition: "width 0.5s ease" }} />
+                          </div>
+                          <span style={{ fontSize: 13, fontWeight: 700, color: yktColor, flexShrink: 0 }}>یکتانت {s.avgYkt}٪</span>
+                        </div>
+                      </div>
+                      <button onClick={() => { setResultsTab("advertisers"); setFilterAgency("all"); setSearchQuery(s.name); }}
+                        style={btnStyle({ fontSize: 11, padding: "6px 12px", flexShrink: 0 })}>
+                        مشاهده اکانت‌ها
+                      </button>
+                    </div>
+                    {s.advertisers.slice(0, 4).length > 0 && (
+                      <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                        {s.advertisers.slice(0, 4).map((a, j) => (
+                          <button key={j} onClick={() => setModalAdv({ adv: a, type: "advertiser" })}
+                            style={{ fontSize: 11, color: T.text2, background: T.surface2, border: `1px solid ${T.border}`, padding: "3px 10px", borderRadius: 20, cursor: "pointer", direction: "ltr" }}>
+                            {a.name}
+                          </button>
+                        ))}
+                        {s.advertisers.length > 4 && <span style={{ fontSize: 11, color: T.text3, padding: "3px 6px" }}>+{s.advertisers.length - 4} دیگر</span>}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+          </div>
+        )}
+
+        {/* Export + message */}
+        <div style={card({ padding: "16px 18px" })}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12, flexWrap: "wrap", gap: 8 }}>
+            <p style={{ margin: 0, fontSize: 13, fontWeight: 600, color: T.text1 }}>پیام نهایی</p>
+            <div style={{ display: "flex", gap: 8 }}>
+              <button onClick={() => { navigator.clipboard.writeText(editableMsg); showToast("کپی شد ✓"); }}
+                style={{ display: "flex", alignItems: "center", gap: 6, padding: "8px 16px", borderRadius: 10, border: "none", background: T.coral, color: "#fff", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="9" y="9" width="13" height="13" rx="2" /><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1" /></svg>
+                کپی
+              </button>
+              <button onClick={() => downloadHTML(result!)} style={btnStyle({ display: "flex", alignItems: "center", gap: 6 })}>
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" /></svg>
+                HTML
+              </button>
+              <button onClick={reset} style={btnStyle()}>شروع مجدد</button>
+            </div>
+          </div>
+          <textarea value={editableMsg} onChange={e => setEditableMsg(e.target.value)} rows={10}
+            style={{ width: "100%", fontSize: 12, padding: "12px 14px", borderRadius: 10, border: `1px solid ${T.border}`, background: T.surface2, color: T.text1, resize: "vertical", boxSizing: "border-box", direction: "rtl", lineHeight: 2, fontFamily: "'JetBrains Mono', monospace", outline: "none" }} />
+          {showDebug && rawDebug && <pre style={{ marginTop: 10, fontSize: 11, color: T.text1, background: T.surface2, padding: 12, borderRadius: 10, whiteSpace: "pre-wrap", direction: "ltr", textAlign: "left", maxHeight: 180, overflow: "auto" }}>{rawDebug}</pre>}
+          <button onClick={() => setShowDebug(v => !v)} style={{ ...btnStyle({ marginTop: 8, fontSize: 11, padding: "5px 12px" }), color: T.text3 }}>دیباگ</button>
         </div>
       </div>
     );
   };
 
-  // suppress unused import warning — recharts components available for future use
-  void ResponsiveContainer; void LineChart; void Line;
-
-  return (
-    <div style={{ maxWidth: 760, margin: "0 auto", padding: "2rem 0", direction: "rtl", fontFamily: "system-ui, sans-serif" }}>
-      <style>{`@keyframes fadeUp{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}} @keyframes spin{to{transform:rotate(360deg)}} .fe{animation:fadeUp 0.25s ease both}`}</style>
-
-      {/* Header */}
-      <div style={{ display: "flex", alignItems: "center", gap: 14, marginBottom: "2rem", paddingBottom: "1.5rem", borderBottom: `0.5px solid ${C.border}` }}>
-        <div style={{ width: 44, height: 44, borderRadius: 12, background: C.coral, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none"><rect x="3" y="3" width="7" height="7" rx="1" fill="#fff" /><rect x="14" y="3" width="7" height="7" rx="1" fill="#fff" /><rect x="3" y="14" width="7" height="7" rx="1" fill="#fff" /><rect x="14" y="14" width="7" height="7" rx="1" fill="#fff" /></svg>
-        </div>
-        <div style={{ flex: 1 }}>
-          <h2 style={{ margin: 0, fontSize: 19, fontWeight: 500, color: C.t1, letterSpacing: "-0.3px" }}>Market Analyzer</h2>
-          <p style={{ margin: 0, fontSize: 12, color: C.t3 }}>آنالیز رقابتی روزانه — یکتانت</p>
-        </div>
-        <nav style={{ display: "flex", gap: 3, background: C.bg, borderRadius: 10, padding: 3 }}>
-          {([["main", "آنالیز"], ["reports", "گزارش‌ها"], ["history", "تاریخچه"]] as [string, string][]).map(([p, l]) => (
-            <button key={p} onClick={() => setPage(p)} style={page === p ? navA : navI}>{l}</button>
-          ))}
-        </nav>
-      </div>
-
-      {/* HISTORY */}
-      {page === "history" && (
-        <div style={{ display: "flex", flexDirection: "column", gap: 12 }} className="fe">
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-            <p style={{ margin: 0, fontSize: 15, fontWeight: 500, color: C.t1 }}>تبلیغ‌کننده‌های گزارش‌شده</p>
-            {history.length > 0 && <button onClick={clearHistory} style={{ ...btn(), color: C.danger, border: `0.5px solid ${C.dangerBorder}` }}>پاک کردن همه</button>}
-          </div>
-          {history.length === 0
-            ? <div style={{ textAlign: "center", padding: "3rem", background: C.bg, borderRadius: 16 }}><p style={{ margin: 0, fontSize: 13, color: C.t3 }}>هنوز گزارشی ذخیره نشده.</p></div>
-            : [...history].reverse().map((h, i) => (
-              <div key={i} style={{ background: C.white, border: `0.5px solid ${C.border}`, borderRadius: 14, padding: "1rem 1.25rem" }} className="fe">
-                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                    <div style={{ width: 8, height: 8, borderRadius: "50%", background: C.coral }} />
-                    <span style={{ fontSize: 13, fontWeight: 500, color: C.t1 }}>{h.dateLabel || h.date}</span>
-                    <span style={{ fontSize: 11, color: C.t3, background: C.bg, padding: "2px 8px", borderRadius: 20 }}>{h.names.length} تبلیغ‌کننده</span>
-                  </div>
-                  <button onClick={() => deleteEntry(h.date)} style={{ ...btn(), color: C.danger, border: `0.5px solid ${C.dangerBorder}`, fontSize: 11 }}>حذف</button>
-                </div>
-                <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-                  {h.names.map((n, j) => <span key={j} style={{ fontSize: 11, color: C.coral, background: C.coralDim, border: `0.5px solid ${C.coralBorder}`, padding: "3px 10px", borderRadius: 20, direction: "ltr" }}>{n}</span>)}
-                </div>
+  // ─ Reports screen ───────────────────────────────────────────────────────────
+  const ReportsScreen = () => (
+    <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+      <p style={{ margin: "0 0 4px", fontSize: 17, fontWeight: 700, color: T.text1 }}>گزارش‌های ذخیره‌شده</p>
+      {savedReports.length === 0
+        ? <div style={{ textAlign: "center", padding: "4rem", color: T.text3, fontSize: 13 }}>هنوز گزارشی ذخیره نشده</div>
+        : [...savedReports].reverse().map((r, i) => (
+          <div key={i} style={card({ padding: "16px 20px" })} className="fade-up">
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
+              <div>
+                <p style={{ margin: "0 0 2px", fontSize: 14, fontWeight: 600, color: T.text1 }}>{r.dateLabel}</p>
+                <p style={{ margin: 0, fontSize: 12, color: T.text3 }}>{r.advertisers?.length || 0} تبلیغ‌کننده · {r.leads?.length || 0} لید</p>
               </div>
-            ))}
-        </div>
-      )}
-
-      {/* REPORTS */}
-      {page === "reports" && (
-        <div style={{ display: "flex", flexDirection: "column", gap: 14 }} className="fe">
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-            <p style={{ margin: 0, fontSize: 15, fontWeight: 500, color: C.t1 }}>گزارش‌های ذخیره‌شده</p>
-            <div style={{ display: "flex", gap: 8 }}>
-              {compareMode && <button onClick={() => { setCompareMode(false); setCompareReport(null); }} style={{ ...btn(), background: C.coralDim, color: C.coral, border: `0.5px solid ${C.coralBorder}` }}>خروج از مقایسه</button>}
-              {!compareMode && savedReports.length > 1 && <button onClick={() => setCompareMode(true)} style={btn()}>مقایسه گزارش‌ها</button>}
+              <button onClick={() => { setResult(r); setEditableMsg(buildMessage(r)); setScreen("results"); setResultsTab("advertisers"); }}
+                style={{ padding: "8px 16px", borderRadius: 10, border: `1px solid ${T.coralBorder}`, background: T.coralDim, color: T.coral, fontSize: 12, fontWeight: 600, cursor: "pointer" }}>مشاهده</button>
             </div>
-          </div>
-          {savedReports.length === 0
-            ? <div style={{ textAlign: "center", padding: "3rem", background: C.bg, borderRadius: 16 }}><p style={{ margin: 0, fontSize: 13, color: C.t3 }}>هنوز گزارشی ذخیره نشده.</p></div>
-            : [...savedReports].reverse().map((r, i) => (
-              <div key={i} style={{ background: C.white, border: `0.5px solid ${compareReport?.id === r.id ? C.coralBorder : C.border}`, borderRadius: 14, padding: "1rem 1.25rem" }} className="fe">
-                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
-                  <div>
-                    <p style={{ margin: 0, fontSize: 14, fontWeight: 500, color: C.t1 }}>{r.dateLabel}</p>
-                    <p style={{ margin: "2px 0 0", fontSize: 12, color: C.t3 }}>{r.advertisers?.length || 0} تبلیغ‌کننده · {r.leads?.length || 0} لید</p>
+            {r.advertisers?.slice(0, 3).map((a, j) => {
+              const total = a.agencies?.reduce((s, x) => s + x.value, 0) || 1;
+              const ykt = a.agencies?.find(x => x.name === "یکتانت");
+              return (
+                <div key={j} style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 5 }}>
+                  <span style={{ fontSize: 12, color: T.text2, direction: "ltr", minWidth: 100, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{a.name}</span>
+                  <div style={{ flex: 1, height: 4, borderRadius: 2, background: T.border, overflow: "hidden" }}>
+                    <div style={{ width: `${Math.round((ykt?.value || 0) / total * 100)}%`, height: "100%", background: T.coral, borderRadius: 2 }} />
                   </div>
-                  <div style={{ display: "flex", gap: 8 }}>
-                    {compareMode && <button onClick={() => setCompareReport(compareReport?.id === r.id ? null : r)} style={{ ...btn(), background: compareReport?.id === r.id ? C.coralDim : "transparent", color: compareReport?.id === r.id ? C.coral : C.t2 }}>{compareReport?.id === r.id ? "انتخاب شده" : "انتخاب"}</button>}
-                    <button onClick={() => { setResult(r); setEditableMsg(buildMessage(r)); setPage("main"); setStep("preview"); }} style={btn()}>مشاهده</button>
-                  </div>
+                  <span style={{ fontSize: 11, color: T.text3, flexShrink: 0, width: 30, textAlign: "left" }}>{Math.round((ykt?.value || 0) / total * 100)}٪</span>
                 </div>
-                {r.advertisers?.slice(0, 3).map((a, j) => {
-                  const total = a.agencies?.reduce((s, x) => s + x.value, 0) || 1;
-                  const ykt = a.agencies?.find(x => x.name === "یکتانت");
-                  return (<div key={j} style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 5 }}>
-                    <span style={{ fontSize: 12, color: C.t2, direction: "ltr", minWidth: 110, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{a.name}</span>
-                    <div style={{ flex: 1, height: 4, borderRadius: 2, background: C.bg, overflow: "hidden" }}>
-                      <div style={{ width: `${Math.round((ykt?.value || 0) / total * 100)}%`, height: "100%", background: C.coral, borderRadius: 2 }} />
-                    </div>
-                  </div>);
-                })}
-              </div>
-            ))}
-        </div>
-      )}
-
-      {/* MAIN */}
-      {page === "main" && (
-        <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-
-          {/* Steps */}
-          <div style={{ display: "flex", alignItems: "center" }}>
-            {(["آپلود", "آنالیز", "پیام"] as string[]).map((label, i) => {
-              const idx = ["upload", "ready", "preview"].indexOf(step), done = idx > i, active = idx === i;
-              return (<div key={i} style={{ display: "flex", alignItems: "center", flex: 1 }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 7, flexShrink: 0 }}>
-                  <div style={{ width: 26, height: 26, borderRadius: "50%", background: done || active ? C.coral : C.bg, border: `1.5px solid ${done || active ? C.coral : C.border}`, display: "flex", alignItems: "center", justifyContent: "center", transition: "all 0.3s" }}>
-                    {done ? <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3"><polyline points="20 6 9 17 4 12" /></svg> : <span style={{ fontSize: 11, fontWeight: 500, color: done || active ? "#fff" : C.mist }}>{i + 1}</span>}
-                  </div>
-                  <span style={{ fontSize: 12, fontWeight: active ? 500 : 400, color: active ? C.t1 : C.t3 }}>{label}</span>
-                </div>
-                {i < 2 && <div style={{ flex: 1, height: "1px", background: done ? C.coral : C.border, margin: "0 10px", transition: "background 0.4s" }} />}
-              </div>);
+              );
             })}
           </div>
+        ))}
+    </div>
+  );
 
-          {uniqueReported.length > 0 && step !== "preview" && (
-            <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 13px", background: C.coralDim, border: `0.5px solid ${C.coralBorder}`, borderRadius: 10 }}>
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke={C.coral} strokeWidth="2"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" /><line x1="12" y1="9" x2="12" y2="13" /><line x1="12" y1="17" x2="12.01" y2="17" /></svg>
-              <p style={{ margin: 0, fontSize: 12, color: C.coral }}>{uniqueReported.length} تبلیغ‌کننده از ۵ روز اخیر skip می‌شن</p>
+  // ─ History screen ────────────────────────────────────────────────────────────
+  const HistoryScreen = () => (
+    <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+        <p style={{ margin: 0, fontSize: 17, fontWeight: 700, color: T.text1 }}>تبلیغ‌کننده‌های گزارش‌شده</p>
+        {history.length > 0 && <button onClick={clearHistory} style={btnStyle({ color: T.danger, borderColor: T.dangerBorder })}>پاک کردن همه</button>}
+      </div>
+      {history.length === 0
+        ? <div style={{ textAlign: "center", padding: "4rem", color: T.text3, fontSize: 13 }}>هنوز گزارشی ذخیره نشده</div>
+        : [...history].reverse().map((h, i) => (
+          <div key={i} style={card({ padding: "16px 20px" })} className="fade-up">
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <div style={{ width: 8, height: 8, borderRadius: "50%", background: T.coral, flexShrink: 0 }} />
+                <span style={{ fontSize: 13, fontWeight: 600, color: T.text1 }}>{h.dateLabel || h.date}</span>
+                <span style={{ fontSize: 11, color: T.text3, background: T.surface2, padding: "2px 9px", borderRadius: 20 }}>{h.names.length} تبلیغ‌کننده</span>
+              </div>
+              <button onClick={() => deleteHistoryEntry(h.date)} style={btnStyle({ fontSize: 11, padding: "5px 11px", color: T.danger, borderColor: T.dangerBorder })}>حذف</button>
             </div>
-          )}
-
-          {/* UPLOAD */}
-          {step === "upload" && (
-            <div className="fe" onDrop={onDrop} onDragOver={e => { e.preventDefault(); setDragOver(true); }} onDragLeave={() => setDragOver(false)} onClick={() => document.getElementById("fi")!.click()}
-              style={{ border: `1.5px dashed ${dragOver ? C.coral : C.sand}`, borderRadius: 20, padding: "3rem 2rem", textAlign: "center", cursor: "pointer", background: dragOver ? C.coralDim : C.bg, transition: "all 0.2s" }}>
-              <div style={{ width: 60, height: 60, borderRadius: 16, background: dragOver ? C.coral : "#fff", border: `1.5px solid ${dragOver ? C.coral : C.sand}`, margin: "0 auto 16px", display: "flex", alignItems: "center", justifyContent: "center", transition: "all 0.2s" }}>
-                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke={dragOver ? "#fff" : C.coral} strokeWidth="1.5"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4" /><polyline points="17 8 12 3 7 8" /><line x1="12" y1="3" x2="12" y2="15" /></svg>
-              </div>
-              <p style={{ margin: "0 0 6px", fontWeight: 500, fontSize: 16, color: C.t1 }}>فایل داده‌های رقابتی را آپلود کنید</p>
-              <p style={{ margin: "0 0 10px", fontSize: 13, color: C.t3 }}>CSV یا XLSX · بکشید یا کلیک کنید</p>
-              <div style={{ display: "flex", flexWrap: "wrap", gap: 5, justifyContent: "center" }}>
-                {["date", "owner_name", "account_manager_name", "Yektanet", "Tapsell", "…"].map((c, i) => (
-                  <span key={i} style={{ fontSize: 11, color: C.stone, background: "#fff", border: `0.5px solid ${C.sand}`, padding: "3px 9px", borderRadius: 20, direction: "ltr" }}>{c}</span>
-                ))}
-              </div>
-              <input id="fi" type="file" accept=".csv,.xlsx,.xls" style={{ display: "none" }} onChange={e => handleFile(e.target.files![0])} />
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+              {h.names.map((n, j) => <span key={j} style={{ fontSize: 11, color: T.coral, background: T.coralDim, border: `1px solid ${T.coralBorder}`, padding: "3px 10px", borderRadius: 20, direction: "ltr" }}>{n}</span>)}
             </div>
-          )}
+          </div>
+        ))}
+    </div>
+  );
 
-          {/* READY */}
-          {step === "ready" && csvData && (
-            <div className="fe" style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-              <div style={{ background: C.white, border: `0.5px solid ${C.border}`, borderRadius: 16, padding: "1.25rem" }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 14 }}>
-                  <div style={{ width: 40, height: 40, borderRadius: 10, background: C.coralDim, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-                    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke={C.coral} strokeWidth="1.5"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" /><polyline points="14 2 14 8 20 8" /></svg>
-                  </div>
-                  <div style={{ flex: 1 }}><p style={{ margin: 0, fontWeight: 500, fontSize: 14, color: C.t1 }}>{csvData.name}</p><p style={{ margin: "2px 0 0", fontSize: 12, color: C.t3 }}>{csvData.rows.length.toLocaleString()} ردیف · {csvData.stats.dates.length} روز</p></div>
-                  <button onClick={() => { setCsvData(null); setStep("upload"); }} style={btn()}>تغییر</button>
-                </div>
-                <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 8 }}>
-                  {([{ l: "تبلیغ‌کننده", v: csvData.stats.advertisers, i: 0 }, { l: "روزها", v: csvData.stats.dates.length, i: 1 }, { l: "گزارش برای", v: todayLabel(), i: 2 }]).map((c) => (
-                    <div key={c.i} style={{ background: C.bg, borderRadius: 10, padding: "9px 11px" }}><p style={{ margin: "0 0 2px", fontSize: 11, color: C.t3 }}>{c.l}</p><p style={{ margin: 0, fontSize: 13, fontWeight: 500, color: c.i === 2 ? C.coral : C.t1, direction: "ltr", textAlign: "right" }}>{c.v}</p></div>
-                  ))}
-                </div>
-              </div>
+  const globalStyles = `
+    @keyframes radarSweep { to { transform: rotate(360deg); } }
+    @keyframes radarPulse { 0%{transform:scale(1);opacity:0.6} 100%{transform:scale(3.5);opacity:0} }
+    @keyframes dotPop { 0%,100%{opacity:0;transform:scale(0.5)} 30%,70%{opacity:0.9;transform:scale(1)} }
+    @keyframes fadeUp { from{opacity:0;transform:translateY(10px)} to{opacity:1;transform:translateY(0)} }
+    @keyframes slideInModal { from{opacity:0;transform:scale(0.96) translateY(10px)} to{opacity:1;transform:scale(1) translateY(0)} }
+    @keyframes spin { to{transform:rotate(360deg)} }
+    .fade-up { animation: fadeUp 0.22s ease both; }
+    * { box-sizing: border-box; }
+    ::-webkit-scrollbar { width: 5px; height: 5px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: ${T.border}; border-radius: 10px; }
+    select option { background: ${T.surface}; color: ${T.text1}; }
+  `;
 
-              {/* Template */}
-              <div style={{ background: C.white, border: `0.5px solid ${C.border}`, borderRadius: 13, padding: "1rem 1.25rem" }}>
-                <p style={{ margin: "0 0 10px", fontSize: 11, fontWeight: 500, color: C.t3, textTransform: "uppercase", letterSpacing: "0.06em" }}>قالب گزارش</p>
-                <div style={{ display: "flex", gap: 8 }}>
-                  {Object.entries(TEMPLATES).map(([key, t]) => (
-                    <button key={key} onClick={() => setSelectedTemplate(key)} style={{ flex: 1, padding: "9px 8px", borderRadius: 10, border: `1.5px solid ${selectedTemplate === key ? C.coral : C.border}`, background: selectedTemplate === key ? C.coralDim : C.bg, cursor: "pointer", transition: "all 0.2s" }}>
-                      <p style={{ margin: "0 0 2px", fontSize: 13, fontWeight: selectedTemplate === key ? 500 : 400, color: selectedTemplate === key ? C.coral : C.t1 }}>{t.label}</p>
-                      <p style={{ margin: 0, fontSize: 11, color: C.t3 }}>{t.desc}</p>
-                    </button>
-                  ))}
-                </div>
-              </div>
+  if (!session) return <><style>{globalStyles}</style><LoginPage T={T} onLogin={setSession} /></>;
 
-              <button onClick={analyze} disabled={loading} style={{ padding: "13px", borderRadius: 13, border: "none", background: loading ? C.bg : C.coral, color: loading ? C.t3 : "#fff", fontSize: 15, fontWeight: 500, cursor: loading ? "not-allowed" : "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 10, transition: "all 0.2s" }}>
-                {loading ? <><svg width="16" height="16" viewBox="0 0 24 24" fill="none" style={{ animation: "spin 0.8s linear infinite" }}><circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="2" strokeDasharray="31" strokeDashoffset="10" /></svg>در حال آنالیز...</> : <>شروع آنالیز <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="5" y1="12" x2="19" y2="12" /><polyline points="12 5 19 12 12 19" /></svg></>}
-              </button>
-              {errMsg && <div style={{ padding: "10px 14px", borderRadius: 10, background: C.dangerBg, border: `0.5px solid ${C.dangerBorder}` }}><p style={{ margin: 0, fontSize: 13, color: C.danger }}>{errMsg}</p></div>}
-              {showDebug && rawDebug && <pre style={{ margin: 0, fontSize: 11, color: C.t1, background: C.bg, padding: 12, borderRadius: 10, whiteSpace: "pre-wrap", direction: "ltr", textAlign: "left", maxHeight: 200, overflow: "auto" }}>{rawDebug}</pre>}
-            </div>
-          )}
+  return (
+    <div style={{ minHeight: "100dvh", background: T.bg, color: T.text1, direction: "rtl", fontFamily: "'Vazirmatn', system-ui, sans-serif" }}>
+      <style>{globalStyles}</style>
 
-          {/* PREVIEW */}
-          {step === "preview" && result && (
-            <div style={{ display: "flex", flexDirection: "column", gap: 0 }} className="fe">
+      <Sidebar screen={screen} setScreen={setScreen} isDark={isDark} setIsDark={setIsDark} hasResult={!!result} session={session} onLogout={handleLogout} refLoading={refLoading} refError={refError} T={T} />
 
-              {/* Export bar */}
-              <div style={{ display: "flex", gap: 8, marginBottom: 14, padding: "10px 14px", background: C.bg, borderRadius: 12, border: `0.5px solid ${C.border}`, alignItems: "center", flexWrap: "wrap" }}>
-                <span style={{ fontSize: 12, color: C.t3, flex: 1 }}>خروجی:</span>
-                <button onClick={() => navigator.clipboard.writeText(editableMsg)} style={{ display: "flex", alignItems: "center", gap: 6, padding: "8px 16px", borderRadius: 10, border: "none", background: C.coral, color: "#fff", fontSize: 13, fontWeight: 500, cursor: "pointer" }}>
-                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="9" y="9" width="13" height="13" rx="2" /><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1" /></svg>کپی متن
-                </button>
-                <button onClick={() => downloadHTML(result)} style={{ display: "flex", alignItems: "center", gap: 6, padding: "8px 16px", borderRadius: 10, border: `0.5px solid ${C.coralBorder}`, background: C.coralDim, color: C.coral, fontSize: 13, fontWeight: 500, cursor: "pointer" }}>
-                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" /></svg>دانلود HTML
-                </button>
-              </div>
-
-              {/* Save */}
-              {pendingSave && saveStatus !== "saved" && (
-                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "11px 15px", background: C.coralDim, border: `1px solid ${C.coralBorder}`, borderRadius: 13, marginBottom: 14 }}>
-                  <div><p style={{ margin: "0 0 1px", fontSize: 13, fontWeight: 500, color: C.t1 }}>این نسخه ذخیره نشده</p><p style={{ margin: 0, fontSize: 12, color: C.t3 }}>{pendingSave.dateLabel} · {pendingSave.names.length} تبلیغ‌کننده</p></div>
-                  <button onClick={confirmSave} style={{ display: "flex", alignItems: "center", gap: 6, padding: "7px 14px", borderRadius: 9, border: "none", background: C.coral, color: "#fff", fontSize: 13, fontWeight: 500, cursor: "pointer" }}>
-                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M19 21H5a2 2 0 01-2-2V5a2 2 0 012-2h11l5 5v11a2 2 0 01-2 2z" /><polyline points="17 21 17 13 7 13 7 21" /></svg>ذخیره
-                  </button>
-                </div>
-              )}
-              {saveStatus === "saved" && <div style={{ padding: "9px 14px", background: C.successBg, border: `0.5px solid ${C.successBorder}`, borderRadius: 9, marginBottom: 14 }}><p style={{ margin: 0, fontSize: 13, color: C.successText }}>✓ ذخیره شد</p></div>}
-
-              {/* Summary */}
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 8, marginBottom: 18 }}>
-                {([{ l: "تاریخ", v: result.dateLabel, c: C.t1 }, { l: "تبلیغ‌کننده", v: result.advertisers.length, c: C.coral }, { l: "لید", v: result.leads.length, c: C.green }, { l: "رقیب", v: result.competitors.length, c: C.amber }]).map((c, i) => (
-                  <div key={i} style={{ background: C.bg, borderRadius: 10, padding: "10px 12px" }}><p style={{ margin: "0 0 3px", fontSize: 11, color: C.t3 }}>{c.l}</p><p style={{ margin: 0, fontSize: 18, fontWeight: 500, color: c.c }}>{c.v}</p></div>
-                ))}
-              </div>
-
-              {/* Compare banner */}
-              {compareReport && <div style={{ padding: "8px 13px", background: C.blueDim, border: "0.5px solid rgba(55,138,221,0.25)", borderRadius: 9, marginBottom: 12, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                <p style={{ margin: 0, fontSize: 12, color: C.blue }}>مقایسه با گزارش {compareReport.dateLabel} فعاله</p>
-                <button onClick={() => setCompareReport(null)} style={{ ...btn(), fontSize: 11, padding: "3px 9px", color: C.blue }}>حذف</button>
-              </div>}
-
-              {/* Filters */}
-              <div style={{ display: "flex", gap: 8, marginBottom: 14, flexWrap: "wrap" }}>
-                <input value={searchQuery} onChange={e => setSearchQuery(e.target.value)} placeholder="جستجوی تبلیغ‌کننده..." style={{ flex: 1, minWidth: 130, fontSize: 13, padding: "7px 11px", borderRadius: 9, border: `0.5px solid ${C.border}`, background: C.bg, color: C.t1, direction: "rtl" }} />
-                <select value={filterAgency} onChange={e => setFilterAgency(e.target.value)} style={{ fontSize: 12, padding: "7px 9px", borderRadius: 9, border: `0.5px solid ${C.border}`, background: C.bg, color: C.t1 }}>
-                  <option value="all">همه آژانس‌ها</option>
-                  {allAgencies.map(a => <option key={a} value={a}>{a}</option>)}
-                </select>
-                <select value={sortBy} onChange={e => setSortBy(e.target.value)} style={{ fontSize: 12, padding: "7px 9px", borderRadius: 9, border: `0.5px solid ${C.border}`, background: C.bg, color: C.t1 }}>
-                  <option value="importance">اهمیت</option>
-                  <option value="volume">حجم</option>
-                  <option value="yektanet">سهم یکتانت ↑</option>
-                </select>
-              </div>
-
-              {/* Timeline */}
-              <div style={{ position: "relative" }}>
-                <div style={{ position: "absolute", right: 18, top: 0, bottom: 0, width: "1px", background: C.border, zIndex: 0 }} />
-
-                {filteredAdvertisers.length > 0 && <div style={{ marginBottom: 18 }}>
-                  <p style={{ fontSize: 11, fontWeight: 500, color: C.t3, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 10, paddingRight: 40 }}>تبلیغ‌کننده‌های مهم {(searchQuery || filterAgency !== "all") ? `(${filteredAdvertisers.length})` : ""}</p>
-                  {filteredAdvertisers.map((adv, i) => <AdvCard key={i} adv={adv} type="advertiser" />)}
-                </div>}
-
-                {result.leads.length > 0 && <div style={{ marginBottom: 18 }}>
-                  <p style={{ fontSize: 11, fontWeight: 500, color: C.t3, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 10, paddingRight: 40 }}>فرصت‌های اپروچ</p>
-                  {result.leads.map((l, i) => <AdvCard key={i} adv={l} type="lead" />)}
-                </div>}
-
-                {result.competitors.length > 0 && <div style={{ marginBottom: 18 }}>
-                  <p style={{ fontSize: 11, fontWeight: 500, color: C.t3, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 10, paddingRight: 40 }}>پلتفرم‌های رقیب</p>
-                  {result.competitors.map((c, i) => (
-                    <div key={i} style={{ display: "flex", gap: 14, marginBottom: 10 }}>
-                      <div style={{ width: 36, height: 36, borderRadius: 9, background: C.amberDim, border: "1.5px solid rgba(186,117,23,0.2)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, marginTop: 2 }}>
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={C.amber} strokeWidth="1.5"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12" /></svg>
-                      </div>
-                      <div style={{ flex: 1, background: C.white, border: `0.5px solid ${C.border}`, borderRadius: 13, padding: "0.9rem 1.1rem" }}>
-                        <p style={{ margin: "0 0 4px", fontWeight: 500, fontSize: 13, color: C.amber }}>{c.platform}</p>
-                        <p style={{ margin: "0 0 5px", fontSize: 13, color: C.t2, lineHeight: 1.8 }}>{c.note}</p>
-                        {c.topclients && <p style={{ margin: "3px 0 0", fontSize: 12, color: C.t3 }}>مهم‌ترین: <span style={{ color: C.t2 }}>{c.topclients}</span></p>}
-                        {c.newclients && c.newclients !== "ندارد" && <p style={{ margin: "3px 0 0", fontSize: 12, color: C.green }}>جدید: {c.newclients}</p>}
-                      </div>
-                    </div>
-                  ))}
-                </div>}
-
-                {result.market && <div style={{ display: "flex", gap: 14, marginBottom: 18 }}>
-                  <div style={{ width: 36, height: 36, borderRadius: 9, background: C.bg, border: `1.5px solid ${C.border}`, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, marginTop: 2 }}>
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={C.mist} strokeWidth="1.5"><rect x="2" y="3" width="20" height="14" rx="2" /><line x1="12" y1="17" x2="12" y2="21" /></svg>
-                  </div>
-                  <div style={{ flex: 1, background: C.bg, borderRadius: 13, padding: "0.9rem 1.1rem" }}>
-                    <p style={{ margin: "0 0 5px", fontSize: 11, fontWeight: 500, color: C.t3, textTransform: "uppercase", letterSpacing: "0.06em" }}>تحلیل کلی بازار</p>
-                    <p style={{ margin: 0, fontSize: 13, color: C.t2, lineHeight: 1.9 }}>{result.market}</p>
-                  </div>
-                </div>}
-              </div>
-
-              {/* Message */}
-              <div style={{ background: C.white, border: `0.5px solid ${C.border}`, borderRadius: 15, padding: "1.1rem 1.25rem", marginTop: 4 }}>
-                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
-                  <p style={{ margin: 0, fontSize: 13, fontWeight: 500, color: C.t1 }}>پیام نهایی</p>
-                  <span style={{ fontSize: 11, color: C.t3, background: C.bg, padding: "2px 8px", borderRadius: 20 }}>قالب: {TEMPLATES[selectedTemplate]?.label}</span>
-                </div>
-                <textarea value={editableMsg} onChange={e => setEditableMsg(e.target.value)} rows={14}
-                  style={{ width: "100%", fontSize: 12, padding: 11, borderRadius: 9, border: `0.5px solid ${C.border}`, background: C.bg, color: C.t1, resize: "vertical", boxSizing: "border-box", direction: "rtl", lineHeight: 2, fontFamily: "monospace" }} />
-                <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
-                  <button onClick={reset} style={btn()}>شروع مجدد</button>
-                  <button onClick={() => setShowDebug(v => !v)} style={{ ...btn(), color: C.t3 }}>دیباگ</button>
-                </div>
-                {showDebug && rawDebug && <pre style={{ marginTop: 10, fontSize: 11, color: C.t1, background: C.bg, padding: 11, borderRadius: 9, whiteSpace: "pre-wrap", direction: "ltr", textAlign: "left", maxHeight: 180, overflow: "auto" }}>{rawDebug}</pre>}
-              </div>
-            </div>
-          )}
+      <div style={{ marginRight: 80 }}>
+        <div style={{ maxWidth: 1100, width: "100%", margin: "0 auto", padding: "40px 40px 100px" }}>
+          {screen === "upload" && <UploadScreen />}
+          {screen === "results" && <ResultsScreen />}
+          {screen === "reports" && <ReportsScreen />}
+          {screen === "history" && <HistoryScreen />}
         </div>
+      </div>
+
+      {modalAdv && (
+        <DetailModal adv={modalAdv.adv} type={modalAdv.type} T={T} onClose={() => setModalAdv(null)}
+          onRegen={() => regenOne(modalAdv.adv, modalAdv.type)} regenLoading={regenLoading === modalAdv.adv.name} />
       )}
+      {toast && <Toast msg={toast.msg} type={toast.type} onDone={() => setToast(null)} T={T} />}
     </div>
   );
 }
