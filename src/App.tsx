@@ -1768,6 +1768,234 @@ export default function App() {
     );
   };
 
+  // ─ Competitor screen ─────────────────────────────────────────────────────────
+  const CompetitorScreen = () => {
+    const D = useD();
+    const [selected, setSelected] = useState<number>(0);
+
+    const COMP_COLS = ["Tapsell","Deema","Tavoos","Adexo","Chavosh","Aparat","Daart","Yellowadwise","Najva","Triboon","Jaryan","Telewebion","Adverge","Soroush","Soroush_ny","Bale_ny","Rubika_ny","Eitaa_ny","Bazaar","Myket"];
+    const TR_COMP: Record<string, string> = { Tapsell:"تپسل",Deema:"دیما",Tavoos:"طاووس",Adexo:"ادکسو",Chavosh:"چاووش",Aparat:"آپارات",Daart:"دارت",Yellowadwise:"یلو ادوایز",Najva:"نجوا",Triboon:"تریبون",Jaryan:"جریان",Telewebion:"تلوبیون",Adverge:"ادورج",Soroush:"سروش",Soroush_ny:"سروش",Bale_ny:"بله",Rubika_ny:"روبیکا",Eitaa_ny:"ایتا",Bazaar:"بازار",Myket:"مایکت" };
+
+    if (!csvData && !result) return (
+      <div style={{ textAlign: "center", padding: "5rem 2rem", display: "flex", flexDirection: "column", alignItems: "center", gap: 16 }}>
+        <RadarHero />
+        <p style={{ margin: 0, fontSize: 14, color: D.t3 }}>برای مشاهده رقبا ابتدا فایل XLSX آپلود کنید</p>
+        <button onClick={() => setScreen("upload")} style={{ padding: "10px 24px", borderRadius: 12, border: "none", background: D.accent, color: "#fff", fontSize: 13, fontWeight: 600, cursor: "pointer" }}>رفتن به آپلود</button>
+      </div>
+    );
+
+    // Compute competitor stats from csvData
+    const compStats = csvData ? COMP_COLS.map(col => {
+      const total = csvData.rows.reduce((s, r) => s + (Number(r[col]) || 0), 0);
+      const clients = new Set(csvData.rows.filter(r => Number(r[col]) > 0).map(r => r.Advertiser_name)).size;
+      return { col, name: TR_COMP[col] || col, total, clients, color: AGENCY_COLORS[TR_COMP[col] || col] || "#888" };
+    }).filter(c => c.total > 0).sort((a, b) => b.total - a.total) : [];
+
+    const grandComp = compStats.reduce((s, c) => s + c.total, 0);
+    const sel = compStats[selected] || compStats[0];
+
+    // Top advertisers using this competitor
+    const topClients = csvData && sel ? csvData.rows
+      .reduce((acc: { name: string; val: number }[], r) => {
+        const val = Number(r[sel.col]) || 0;
+        if (!val) return acc;
+        const existing = acc.find(x => x.name === r.Advertiser_name);
+        if (existing) existing.val += val; else acc.push({ name: r.Advertiser_name, val });
+        return acc;
+      }, []).sort((a, b) => b.val - a.val).slice(0, 6) : [];
+
+    // AI competitor notes from result
+    const aiComps = result?.competitors || [];
+
+    if (compStats.length === 0) return (
+      <div style={{ textAlign: "center", padding: "4rem", color: D.t3, fontSize: 13 }}>داده رقیبی در فایل یافت نشد</div>
+    );
+
+    return (
+      <div style={{ display: "flex", gap: 16, minHeight: 500 }}>
+        {/* Competitor list sidebar */}
+        <div style={{ width: 210, flexShrink: 0, background: D.card, border: `1px solid ${D.border}`, borderRadius: 16, padding: "14px 10px", overflowY: "auto" }}>
+          <div style={{ fontSize: 10, color: D.t3, textTransform: "uppercase", letterSpacing: ".08em", fontWeight: 600, marginBottom: 12, padding: "0 4px" }}>رقبا</div>
+          {compStats.map((c, i) => (
+            <button key={c.col} onClick={() => setSelected(i)} style={{ width: "100%", padding: "10px 12px", borderRadius: 10, border: `1px solid ${selected === i ? c.color + "44" : D.border}`, background: selected === i ? c.color + "11" : "transparent", cursor: "pointer", marginBottom: 6, transition: "all .14s", textAlign: "right", fontFamily: "Vazirmatn,sans-serif" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
+                <div style={{ width: 8, height: 8, borderRadius: "50%", background: c.color, flexShrink: 0 }} />
+                <span style={{ fontSize: 13, fontWeight: 600, color: selected === i ? c.color : D.t1 }}>{c.name}</span>
+                <span style={{ fontSize: 10, color: D.t3, fontFamily: D.mono, marginRight: "auto" }}>{grandComp > 0 ? Math.round(c.total / grandComp * 100) : 0}٪</span>
+              </div>
+              <div style={{ fontSize: 10, color: D.t3, fontFamily: D.mono }}>{c.clients} مشتری</div>
+            </button>
+          ))}
+        </div>
+
+        {/* Detail panel */}
+        {sel && (
+          <div className="fu" style={{ flex: 1, display: "flex", flexDirection: "column", gap: 14 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+              <div style={{ width: 44, height: 44, borderRadius: 14, background: sel.color + "22", border: `1.5px solid ${sel.color + "44"}`, display: "flex", alignItems: "center", justifyContent: "center" }}>
+                <div style={{ width: 16, height: 16, borderRadius: "50%", background: sel.color }} />
+              </div>
+              <div>
+                <div style={{ fontSize: 22, fontWeight: 800, color: D.t1, letterSpacing: "-.4px" }}>{sel.name}</div>
+                <div style={{ fontSize: 12, color: D.t3, fontFamily: D.mono, marginTop: 2 }}>
+                  {sel.clients} مشتری · سهم {grandComp > 0 ? Math.round(sel.total / grandComp * 100) : 0}٪ از رقبا
+                </div>
+              </div>
+            </div>
+
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 14 }}>
+              <div style={{ background: D.card, border: `1px solid ${D.border}`, borderRadius: 12, padding: "14px 16px" }}>
+                <div style={{ fontSize: 10, color: D.t3, textTransform: "uppercase", letterSpacing: ".08em", marginBottom: 6 }}>سهم از رقبا</div>
+                <div style={{ fontSize: 28, fontWeight: 800, color: sel.color, fontFamily: D.mono, lineHeight: 1 }}>{grandComp > 0 ? Math.round(sel.total / grandComp * 100) : 0}٪</div>
+              </div>
+              <div style={{ background: D.card, border: `1px solid ${D.border}`, borderRadius: 12, padding: "14px 16px" }}>
+                <div style={{ fontSize: 10, color: D.t3, textTransform: "uppercase", letterSpacing: ".08em", marginBottom: 6 }}>کل مشتریان</div>
+                <div style={{ fontSize: 28, fontWeight: 800, color: D.t1, fontFamily: D.mono, lineHeight: 1 }}>{sel.clients}</div>
+              </div>
+              <div style={{ background: D.card, border: `1px solid ${D.border}`, borderRadius: 12, padding: "14px 16px" }}>
+                <div style={{ fontSize: 10, color: D.t3, textTransform: "uppercase", letterSpacing: ".08em", marginBottom: 6 }}>حجم سشن</div>
+                <div style={{ fontSize: 28, fontWeight: 800, color: D.blue, fontFamily: D.mono, lineHeight: 1 }}>{formatNumber(sel.total)}</div>
+              </div>
+            </div>
+
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
+              <div style={{ background: D.card, border: `1px solid ${D.border}`, borderRadius: 14, padding: "16px 18px" }}>
+                <SectionHeader title="مهم‌ترین مشتریان" />
+                {topClients.map((c, i) => (
+                  <div key={i} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 0", borderBottom: i < topClients.length - 1 ? `1px solid ${D.border}` : "none" }}>
+                    <span style={{ fontSize: 10, color: D.t3, fontFamily: D.mono, width: 14 }}>{i + 1}</span>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 12, fontFamily: D.mono, color: D.t1, overflow: "hidden", textOverflow: "ellipsis" }}>{c.name}</div>
+                      <div style={{ height: 3, borderRadius: 2, background: D.border, marginTop: 4, overflow: "hidden" }}>
+                        <div style={{ width: `${topClients[0] ? Math.round(c.val / topClients[0].val * 100) : 0}%`, height: "100%", background: sel.color, borderRadius: 2 }} />
+                      </div>
+                    </div>
+                    <span style={{ fontSize: 10, fontFamily: D.mono, color: sel.color }}>{formatNumber(c.val)}</span>
+                  </div>
+                ))}
+              </div>
+
+              <div style={{ background: D.card, border: `1px solid ${D.border}`, borderRadius: 14, padding: "16px 18px" }}>
+                <SectionHeader title="یادداشت AI" />
+                {aiComps.filter(c => c.platform.includes(sel.name) || sel.name.includes(c.platform)).slice(0, 1).map((c, i) => (
+                  <div key={i}>
+                    <p style={{ margin: "0 0 8px", fontSize: 12, color: D.t2, lineHeight: 1.9 }}>{c.note}</p>
+                    {c.topclients && <p style={{ margin: "4px 0 0", fontSize: 11, color: D.t3 }}>مهم‌ترین: <span style={{ color: D.t2 }}>{c.topclients}</span></p>}
+                    {c.newclients && c.newclients !== "ندارد" && <p style={{ margin: "4px 0 0", fontSize: 11, color: D.green }}>جدید: {c.newclients}</p>}
+                  </div>
+                ))}
+                {aiComps.filter(c => c.platform.includes(sel.name) || sel.name.includes(c.platform)).length === 0 && (
+                  <p style={{ fontSize: 12, color: D.t3, marginTop: 8 }}>آنالیز AI موجود نیست — ابتدا آنالیز را اجرا کنید</p>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  // ─ Market map screen ─────────────────────────────────────────────────────────
+  const MarketMapScreen = () => {
+    const D = useD();
+    const [hovered, setHovered] = useState<string | null>(null);
+    const [filterCat, setFilterCat] = useState("all");
+
+    if (!csvData) return (
+      <div style={{ textAlign: "center", padding: "5rem 2rem", display: "flex", flexDirection: "column", alignItems: "center", gap: 16 }}>
+        <RadarHero />
+        <p style={{ margin: 0, fontSize: 14, color: D.t3 }}>برای مشاهده نقشه بازار ابتدا فایل XLSX آپلود کنید</p>
+        <button onClick={() => setScreen("upload")} style={{ padding: "10px 24px", borderRadius: 12, border: "none", background: D.accent, color: "#fff", fontSize: 13, fontWeight: 600, cursor: "pointer" }}>رفتن به آپلود</button>
+      </div>
+    );
+
+    const rows = csvData.rows;
+    const advSet = new Map<string, { name: string; cat1: string; sessions: number; ykt: number }>();
+    rows.forEach(r => {
+      const id = (r.Owner_id || r.Advertiser_name || "").trim();
+      if (!id) return;
+      const cur = advSet.get(id) || { name: r.Advertiser_name || id, cat1: r.Category_level_1 || "", sessions: 0, ykt: 0 };
+      cur.sessions += Number(r.Total_sessions) || 0;
+      cur.ykt += Number(r.Yektanet) || 0;
+      advSet.set(id, cur);
+    });
+    const advList = [...advSet.values()].map(a => ({ ...a, yktShare: a.sessions > 0 ? Math.round(a.ykt / a.sessions * 100) : 0 })).filter(a => a.sessions > 0);
+    const cats = [...new Set(advList.map(a => a.cat1).filter(Boolean))];
+    const items = filterCat === "all" ? advList : advList.filter(a => a.cat1 === filterCat);
+
+    const maxS = Math.max(...items.map(a => a.sessions), 1);
+    const W = 900, H = 480, pad = 60;
+    const hovItem = items.find(a => a.name === hovered);
+
+    return (
+      <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+          <div>
+            <div style={{ fontSize: 18, fontWeight: 800, color: D.t1, letterSpacing: "-.3px" }}>نقشه بازار</div>
+            <div style={{ fontSize: 11, color: D.t3, fontFamily: D.mono, marginTop: 2 }}>محور X: حجم سشن · محور Y: سهم یکتانت · اندازه: حجم نسبی</div>
+          </div>
+          <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+            <Pill label="همه" active={filterCat === "all"} onClick={() => setFilterCat("all")} />
+            {cats.slice(0, 5).map(c => <Pill key={c} label={c} active={filterCat === c} onClick={() => setFilterCat(c)} />)}
+          </div>
+        </div>
+
+        <div style={{ background: D.card, border: `1px solid ${D.border}`, borderRadius: 16, position: "relative", overflow: "hidden", height: H }}>
+          {[0, 25, 50, 75, 100].map(y => (
+            <div key={y} style={{ position: "absolute", left: pad, right: 20, top: `${(1 - y / 100) * (H - pad * 2) + pad}px`, height: 1, background: y === 50 ? D.border2 : D.border }}>
+              <span style={{ position: "absolute", right: "100%", marginRight: 8, fontSize: 9.5, color: D.t3, fontFamily: D.mono, whiteSpace: "nowrap" }}>{y}٪</span>
+            </div>
+          ))}
+          <div style={{ position: "absolute", left: pad + 16, top: 14, fontSize: 10, color: D.green, fontFamily: D.mono, opacity: .7 }}>سهم بالا — محافظت کنید</div>
+          <div style={{ position: "absolute", left: pad + 16, bottom: pad + 16, fontSize: 10, color: D.red, fontFamily: D.mono, opacity: .7 }}>سهم پایین — رشد دهید</div>
+          <div style={{ position: "absolute", left: pad, right: 20, top: pad, height: (H - pad * 2) * 0.4, background: "rgba(29,184,126,.04)", pointerEvents: "none" }} />
+          <div style={{ position: "absolute", left: pad, right: 20, top: pad + (H - pad * 2) * 0.6, height: (H - pad * 2) * 0.4, background: "rgba(224,82,82,.04)", pointerEvents: "none" }} />
+
+          <svg width="100%" height={H} viewBox={`0 0 ${W} ${H}`} style={{ position: "absolute", inset: 0 }}>
+            {items.map(a => {
+              const x = pad + (Math.log10(a.sessions + 10) / Math.log10(maxS + 10)) * (W - pad * 2);
+              const y = pad + (1 - a.yktShare / 100) * (H - pad * 2);
+              const r = Math.max(10, Math.sqrt(a.sessions / maxS) * 40);
+              const isHov = hovered === a.name;
+              const fillColor = a.yktShare >= 60 ? D.green : a.yktShare >= 40 ? D.accent : D.red;
+              return (
+                <g key={a.name} style={{ cursor: "pointer" }} onMouseEnter={() => setHovered(a.name)} onMouseLeave={() => setHovered(null)}>
+                  <circle cx={x} cy={y} r={r + (isHov ? 4 : 0)} fill={fillColor} opacity={isHov ? .8 : .35} style={{ transition: "r .15s, opacity .15s" }} />
+                  <circle cx={x} cy={y} r={4} fill={fillColor} opacity={.9} />
+                  {(isHov || r > 24) && (
+                    <text x={x} y={y - r - 6} textAnchor="middle" fontSize="9.5" fill={D.t2} fontFamily={D.mono} style={{ pointerEvents: "none" }}>
+                      {a.name.split(".")[0].slice(0, 20)}
+                    </text>
+                  )}
+                </g>
+              );
+            })}
+          </svg>
+
+          {hovItem && (
+            <div style={{ position: "absolute", top: 16, left: 16, background: D.surface, border: `1px solid ${D.border2}`, borderRadius: 12, padding: "12px 14px", pointerEvents: "none", minWidth: 200, zIndex: 10 }}>
+              <div style={{ fontSize: 13, fontWeight: 700, color: D.t1, fontFamily: D.mono, marginBottom: 6 }}>{hovItem.name}</div>
+              <div style={{ display: "flex", gap: 14, fontSize: 11, color: D.t2, fontFamily: D.mono }}>
+                <span>سشن: {formatNumber(hovItem.sessions)}</span>
+                <span>یکتانت: {hovItem.yktShare}٪</span>
+              </div>
+              {hovItem.cat1 && <div style={{ fontSize: 10, color: D.t3, marginTop: 4 }}>{hovItem.cat1}</div>}
+            </div>
+          )}
+        </div>
+
+        <div style={{ display: "flex", gap: 16, justifyContent: "center" }}>
+          {[{ color: D.green, label: "سهم بالای ۶۰٪" }, { color: D.accent, label: "سهم ۴۰–۶۰٪" }, { color: D.red, label: "سهم زیر ۴۰٪" }].map((l, i) => (
+            <div key={i} style={{ display: "flex", alignItems: "center", gap: 6 }}>
+              <div style={{ width: 8, height: 8, borderRadius: "50%", background: l.color }} />
+              <span style={{ fontSize: 11, color: D.t3 }}>{l.label}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  };
+
   const tokens = useMemo(() => makeTokens(isDark), [isDark]);
 
   const topbarYktShare = useMemo<number | null>(() => {
@@ -1814,6 +2042,8 @@ export default function App() {
             {screen === "upload" && <UploadScreen />}
             {screen === "dashboard" && <DashboardScreen />}
             {screen === "results" && <ResultsScreen />}
+            {screen === "competitor" && <CompetitorScreen />}
+            {screen === "marketmap" && <MarketMapScreen />}
             {screen === "reports" && <ReportsScreen />}
             {screen === "history" && <HistoryScreen />}
             {screen === "settings" && <SettingsScreen />}
