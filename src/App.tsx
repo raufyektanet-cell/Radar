@@ -406,12 +406,13 @@ function StatusBadge({ status }: { status: string }) {
   return <Badge label={s.l} color={s.c} />;
 }
 
-function KpiCard({ label, value, sub, color, delta, delay = 0 }: { label: string; value: string | number; sub?: string; color?: string; delta?: number; delay?: number }) {
+function KpiCard({ label, value, sub, color, delta, delay = 0, icon }: { label: string; value: string | number; sub?: string; color?: string; delta?: number; delay?: number; icon?: React.ReactNode }) {
   const D = useD();
   const c = color || D.accent;
   return (
     <div className="fu" style={{ background: D.card, border: `1px solid ${D.border}`, borderRadius: 14, padding: "14px 16px", animationDelay: `${delay}ms`, position: "relative", overflow: "hidden" }}>
       <div style={{ position: "absolute", top: 0, right: 0, width: 80, height: 80, borderRadius: "0 0 0 80px", background: c, opacity: .06, pointerEvents: "none" }} />
+      {icon && <div style={{ color: c, marginBottom: 8, opacity: .7 }}>{icon}</div>}
       <div style={{ fontSize: 10, color: D.t3, textTransform: "uppercase", letterSpacing: ".08em", fontWeight: 600, marginBottom: 6 }}>{label}</div>
       <div style={{ fontSize: 26, fontWeight: 800, color: c, fontFamily: D.mono, lineHeight: 1, letterSpacing: "-1px" }}>{value}</div>
       {sub && <div style={{ fontSize: 11, color: D.t3, marginTop: 5 }}>{sub}</div>}
@@ -1508,12 +1509,13 @@ export default function App() {
 
   // ─ Dashboard screen ─────────────────────────────────────────────────────────
   const DashboardScreen = () => {
+    const D = useD();
     if (!csvData) return (
       <div style={{ textAlign: "center", padding: "5rem 2rem", display: "flex", flexDirection: "column", alignItems: "center", gap: 16 }}>
         <RadarHero />
-        <p style={{ margin: 0, fontSize: 15, fontWeight: 600, color: T.text1 }}>داشبورد آنالیز رقابتی</p>
-        <p style={{ margin: 0, fontSize: 13, color: T.text3 }}>ابتدا یک فایل XLSX آپلود کنید تا داشبورد فعال شود</p>
-        <button onClick={() => setScreen("upload")} style={{ padding: "10px 24px", borderRadius: 12, border: "none", background: T.coral, color: "#fff", fontSize: 14, fontWeight: 600, cursor: "pointer" }}>رفتن به آنالیز</button>
+        <p style={{ margin: 0, fontSize: 15, fontWeight: 600, color: D.t1 }}>داشبورد آنالیز رقابتی</p>
+        <p style={{ margin: 0, fontSize: 13, color: D.t3 }}>ابتدا یک فایل XLSX آپلود کنید تا داشبورد فعال شود</p>
+        <button onClick={() => setScreen("upload")} style={{ padding: "10px 24px", borderRadius: 12, border: "none", background: D.accent, color: "#fff", fontSize: 14, fontWeight: 600, cursor: "pointer" }}>رفتن به آنالیز</button>
       </div>
     );
 
@@ -1540,228 +1542,178 @@ export default function App() {
     const totalYkt = advList.reduce((s, a) => s + a.ykt, 0);
     const yktShare = totalSessions > 0 ? Math.round(totalYkt / totalSessions * 100) : 0;
     const totalSpend = advList.reduce((s, a) => s + a.spend, 0);
-    const dates = [...new Set(rows.map(r => r.Date || r.date).filter(Boolean))];
+    const dates = [...new Set(rows.map(r => r.Date || r.date).filter(Boolean))].sort();
+
+    // Daily trend (last 7 days)
+    const dailyMap = new Map<string, { total: number; ykt: number }>();
+    rows.forEach(r => {
+      const d = r.Date || r.date || "";
+      if (!d) return;
+      const cur = dailyMap.get(d) || { total: 0, ykt: 0 };
+      cur.total += Number(r.Total_sessions) || 0;
+      cur.ykt += Number(r.Yektanet) || 0;
+      dailyMap.set(d, cur);
+    });
+    const dailyTrend = [...dailyMap.entries()].sort((a, b) => a[0].localeCompare(b[0])).slice(-7).map(([date, { total, ykt }]) => ({
+      date, total, share: total > 0 ? Math.round(ykt / total * 100) : 0,
+    }));
 
     // Competitor totals
     const compTotals = COMP_COLS.map(col => ({
       col, name: TR_COMP[col] || col,
       total: advList.reduce((s, a) => s + (a.comps[col] || 0), 0),
-    })).filter(c => c.total > 0).sort((a, b) => b.total - a.total).slice(0, 10);
-    const compMax = compTotals[0]?.total || 1;
-
-    // Industry breakdown (by unique advertiser)
-    const indMap = new Map<string, { sessions: number; ykt: number; count: number }>();
-    advList.forEach(a => {
-      const ind = a.industry || "سایر";
-      const cur = indMap.get(ind) || { sessions: 0, ykt: 0, count: 0 };
-      cur.sessions += a.sessions; cur.ykt += a.ykt; cur.count++;
-      indMap.set(ind, cur);
-    });
-    const indStats = [...indMap.entries()].map(([name, { sessions, ykt, count }]) => ({
-      name, count, sessions,
-      yktShare: sessions > 0 ? Math.round(ykt / sessions * 100) : 0,
-    })).sort((a, b) => b.sessions - a.sessions);
-
-    // AM performance
-    const amMap = new Map<string, { sessions: number; ykt: number; accounts: number; spend: number }>();
-    advList.forEach(a => {
-      if (!a.am) return;
-      const cur = amMap.get(a.am) || { sessions: 0, ykt: 0, accounts: 0, spend: 0 };
-      cur.sessions += a.sessions; cur.ykt += a.ykt; cur.accounts++; cur.spend += a.spend;
-      amMap.set(a.am, cur);
-    });
-    const amStats = [...amMap.entries()].map(([name, d]) => ({
-      name, accounts: d.accounts,
-      yktShare: d.sessions > 0 ? Math.round(d.ykt / d.sessions * 100) : 0,
-      sessions: d.sessions, spend: d.spend,
-    })).sort((a, b) => b.accounts - a.accounts);
-
-    // Team performance
-    const teamMap = new Map<string, { sessions: number; ykt: number; accounts: number }>();
-    advList.forEach(a => {
-      if (!a.team) return;
-      const cur = teamMap.get(a.team) || { sessions: 0, ykt: 0, accounts: 0 };
-      cur.sessions += a.sessions; cur.ykt += a.ykt; cur.accounts++;
-      teamMap.set(a.team, cur);
-    });
-    const teamStats = [...teamMap.entries()].map(([name, d]) => ({
-      name, accounts: d.accounts,
-      yktShare: d.sessions > 0 ? Math.round(d.ykt / d.sessions * 100) : 0,
-    })).sort((a, b) => b.accounts - a.accounts);
+    })).filter(c => c.total > 0).sort((a, b) => b.total - a.total).slice(0, 8);
+    const grandTotal = totalYkt + compTotals.reduce((s, c) => s + c.total, 0);
 
     // At-risk: ykt share < 35%, sessions > 5000
     const atRisk = advList.filter(a => a.sessions > 5000)
       .map(a => ({ ...a, yktShare: a.sessions > 0 ? Math.round(a.ykt / a.sessions * 100) : 0 }))
       .filter(a => a.yktShare > 0 && a.yktShare < 35)
-      .sort((a, b) => b.sessions - a.sessions).slice(0, 8);
+      .sort((a, b) => b.sessions - a.sessions).slice(0, 4);
 
-    // Opportunities: zero ykt, significant sessions
-    const opportunities = advList.filter(a => a.ykt === 0 && a.sessions > 2000)
-      .sort((a, b) => b.sessions - a.sessions).slice(0, 8);
+    // Top advertisers
+    const top5 = advList.filter(a => a.ykt > 0)
+      .map(a => ({ ...a, yktShare: a.sessions > 0 ? Math.round(a.ykt / a.sessions * 100) : 0 }))
+      .sort((a, b) => b.sessions - a.sessions).slice(0, 5);
 
-    const yktColor = yktShare >= 50 ? T.coral : yktShare >= 30 ? T.amber : T.danger;
+    // Leads: zero ykt, significant sessions
+    const leads = advList.filter(a => a.ykt === 0 && a.sessions > 2000)
+      .sort((a, b) => b.sessions - a.sessions);
+
+    const yktColor = yktShare >= 50 ? D.accent : yktShare >= 30 ? D.amber : D.red;
 
     return (
-      <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-          <div>
-            <p style={{ margin: "0 0 2px", fontSize: 18, fontWeight: 700, color: T.text1 }}>داشبورد رقابتی</p>
-            <p style={{ margin: 0, fontSize: 12, color: T.text3 }}>{advList.length} آگهی‌دهنده · {dates.length} روز داده · {csvData.name}</p>
-          </div>
-          <button onClick={() => setScreen("upload")} style={{ padding: "8px 18px", borderRadius: 10, border: `1px solid ${T.coralBorder}`, background: T.coralDim, color: T.coral, fontSize: 12, fontWeight: 600, cursor: "pointer" }}>شروع آنالیز AI</button>
-        </div>
-
+      <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
         {/* KPI row */}
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(180px, 1fr))", gap: 12 }}>
-          {[
-            { label: "آگهی‌دهندگان", value: advList.length.toLocaleString(), color: T.text1 },
-            { label: "کل سشن‌ها", value: formatNumber(totalSessions), color: T.text1 },
-            { label: "سهم یکتانت", value: `${yktShare}٪`, color: yktColor },
-            { label: "روزهای داده", value: dates.length, color: T.blue },
-            { label: "بودجه یکتانت (M)", value: totalSpend > 0 ? `${(totalSpend / 1000000).toFixed(0)}M` : "—", color: T.green },
-            { label: "در معرض خطر", value: atRisk.length, color: T.amber },
-          ].map((kpi, i) => (
-            <div key={i} style={card({ padding: "16px 18px" })}>
-              <p style={{ margin: "0 0 6px", fontSize: 11, color: T.text3 }}>{kpi.label}</p>
-              <p style={{ margin: 0, fontSize: 24, fontWeight: 700, color: kpi.color, direction: "ltr", textAlign: "right" }}>{kpi.value}</p>
-            </div>
-          ))}
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 12 }}>
+          <KpiCard label="کل سشن‌ها" value={formatNumber(totalSessions)} sub={`${advList.length} آگهی‌دهنده`} color={D.accent}
+            icon={<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>} />
+          <KpiCard label="سهم یکتانت" value={`${yktShare}٪`} sub={`از ${formatNumber(totalYkt)} سشن`} color={yktColor} delay={40}
+            icon={<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="4"/></svg>} />
+          <KpiCard label="تبلیغ‌کننده فعال" value={advList.length} sub={`${dates.length} روز داده`} color={D.blue} delay={80}
+            icon={<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 7V5a2 2 0 00-2-2h-4a2 2 0 00-2 2v2"/></svg>} />
+          <KpiCard label="لیدهای فعال" value={leads.length} sub="بدون یکتانت" color={D.green} delay={120}
+            icon={<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg>} />
+          <KpiCard label="درآمد تخمینی" value={fmtMoney(totalSpend)} sub="تومان" color={D.amber} delay={160}
+            icon={<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/></svg>} />
         </div>
 
-        {/* Competitive landscape */}
-        <div style={card({ padding: "18px 22px" })}>
-          <p style={{ margin: "0 0 4px", fontSize: 14, fontWeight: 700, color: T.text1 }}>چشم‌انداز رقبا</p>
-          <p style={{ margin: "0 0 16px", fontSize: 12, color: T.text3 }}>مقایسه کل سشن‌های جذب‌شده در بازار تبلیغات دیجیتال</p>
-          <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-              <span style={{ fontSize: 12, color: T.text1, fontWeight: 600, minWidth: 90, textAlign: "right" }}>یکتانت ●</span>
-              <div style={{ flex: 1, height: 24, borderRadius: 7, background: T.border, overflow: "hidden" }}>
-                <div style={{ height: "100%", width: `${Math.round(totalYkt / compMax * 100)}%`, background: T.coral, borderRadius: 7, minWidth: 4 }} />
+        {/* Main 2-col: trend + agency distribution */}
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 300px", gap: 14 }}>
+          <div className="fu" style={{ background: D.card, border: `1px solid ${D.border}`, borderRadius: 16, padding: "18px 20px" }}>
+            <SectionHeader title="روند بازار" sub={`${dailyTrend.length} روز اخیر`} />
+            {dailyTrend.length > 1 ? (
+              <>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginBottom: 12 }}>
+                  <div>
+                    <div style={{ fontSize: 10, color: D.t3, textTransform: "uppercase", letterSpacing: ".06em", marginBottom: 4 }}>مجموع سشن</div>
+                    <MiniLineChart data={dailyTrend.map(d => d.total)} color={D.blue} h={80} />
+                  </div>
+                  <div>
+                    <div style={{ fontSize: 10, color: D.t3, textTransform: "uppercase", letterSpacing: ".06em", marginBottom: 4 }}>سهم یکتانت ٪</div>
+                    <MiniLineChart data={dailyTrend.map(d => d.share)} color={D.accent} h={80} />
+                  </div>
+                </div>
+                <div style={{ display: "flex", gap: 12, justifyContent: "center", overflowX: "auto" }}>
+                  {dailyTrend.map((d, i) => (
+                    <div key={i} style={{ textAlign: "center", flexShrink: 0 }}>
+                      <div style={{ fontSize: 9, color: D.t3, fontFamily: D.mono }}>{d.date.slice(5)}</div>
+                      <div style={{ fontSize: 10, fontWeight: 600, color: D.accent, fontFamily: D.mono }}>{d.share}٪</div>
+                      <div style={{ fontSize: 9, color: D.t3, fontFamily: D.mono }}>{formatNumber(d.total)}</div>
+                    </div>
+                  ))}
+                </div>
+              </>
+            ) : (
+              <div style={{ color: D.t3, fontSize: 12, textAlign: "center", padding: "24px 0" }}>داده روزانه کافی نیست</div>
+            )}
+          </div>
+
+          <div className="fu" style={{ background: D.card, border: `1px solid ${D.border}`, borderRadius: 16, padding: "18px 20px", animationDelay: "60ms" }}>
+            <SectionHeader title="توزیع آژانس‌ها" />
+            <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 9 }}>
+              <div style={{ width: 6, height: 6, borderRadius: "50%", background: D.accent, flexShrink: 0 }} />
+              <div style={{ fontSize: 12, color: D.t2, width: 80, flexShrink: 0, textAlign: "right" }}>یکتانت</div>
+              <div style={{ flex: 1, height: 4, borderRadius: 2, background: D.border2, overflow: "hidden" }}>
+                <div style={{ width: `${grandTotal > 0 ? Math.round(totalYkt / grandTotal * 100) : 0}%`, height: "100%", background: D.accent, borderRadius: 2 }} />
               </div>
-              <span style={{ fontSize: 11, color: T.text2, minWidth: 60, textAlign: "left", direction: "ltr" }}>{formatNumber(totalYkt)}</span>
+              <div style={{ fontSize: 11, fontFamily: D.mono, color: D.t2, width: 30, textAlign: "left" }}>{grandTotal > 0 ? Math.round(totalYkt / grandTotal * 100) : 0}٪</div>
             </div>
             {compTotals.map((c, i) => (
-              <div key={i} style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                <span style={{ fontSize: 12, color: T.text2, minWidth: 90, textAlign: "right" }}>{c.name}</span>
-                <div style={{ flex: 1, height: 24, borderRadius: 7, background: T.border, overflow: "hidden" }}>
-                  <div style={{ height: "100%", width: `${Math.round(c.total / compMax * 100)}%`, background: AGENCY_COLORS[c.name] || T.text3, borderRadius: 7, minWidth: 2 }} />
+              <div key={c.col} style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 9 }}>
+                <div style={{ width: 6, height: 6, borderRadius: "50%", background: AGENCY_COLORS[c.name] || "#888", flexShrink: 0 }} />
+                <div style={{ fontSize: 12, color: D.t2, width: 80, flexShrink: 0, textAlign: "right" }}>{c.name}</div>
+                <div style={{ flex: 1, height: 4, borderRadius: 2, background: D.border2, overflow: "hidden" }}>
+                  <div style={{ width: `${grandTotal > 0 ? Math.round(c.total / grandTotal * 100) : 0}%`, height: "100%", background: AGENCY_COLORS[c.name] || "#888", borderRadius: 2, animation: "barGrow .6s ease both", animationDelay: `${i * 60}ms` }} />
                 </div>
-                <span style={{ fontSize: 11, color: T.text3, minWidth: 60, textAlign: "left", direction: "ltr" }}>{formatNumber(c.total)}</span>
+                <div style={{ fontSize: 11, fontFamily: D.mono, color: D.t2, width: 30, textAlign: "left" }}>{grandTotal > 0 ? Math.round(c.total / grandTotal * 100) : 0}٪</div>
               </div>
             ))}
           </div>
         </div>
 
-        {/* Industry + Team in 2 columns */}
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(380px, 1fr))", gap: 16 }}>
-          <div style={card({ padding: "18px 22px" })}>
-            <p style={{ margin: "0 0 4px", fontSize: 14, fontWeight: 700, color: T.text1 }}>تفکیک صنعت</p>
-            <p style={{ margin: "0 0 14px", fontSize: 12, color: T.text3 }}>میانگین سهم یکتانت به تفکیک صنعت</p>
-            <div style={{ display: "flex", flexDirection: "column", gap: 9 }}>
-              {indStats.filter(s => s.name !== "سایر").slice(0, 10).map((s, i) => {
-                const c = s.yktShare >= 50 ? T.coral : s.yktShare >= 30 ? T.amber : T.danger;
-                return (
-                  <div key={i}>
-                    <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
-                      <span style={{ fontSize: 12, color: T.text2 }}>{s.name} <span style={{ color: T.text3, fontSize: 11 }}>({s.count})</span></span>
-                      <span style={{ fontSize: 12, fontWeight: 700, color: c }}>{s.yktShare}٪</span>
+        {/* Bottom 2-col: top advertisers + at-risk */}
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
+          <div className="fu" style={{ background: D.card, border: `1px solid ${D.border}`, borderRadius: 16, padding: "18px 20px" }}>
+            <SectionHeader title="برترین تبلیغ‌کننده‌ها" sub="بر اساس حجم سشن"
+              action={<button onClick={() => setScreen("results")} style={{ fontSize: 11, color: D.accent, background: D.accentDim, border: `1px solid ${D.accentBrd}`, borderRadius: 99, padding: "3px 10px", cursor: "pointer", fontFamily: "Vazirmatn,sans-serif" }}>همه ←</button>} />
+            {top5.map((a, i) => (
+              <div key={a.name} className="fu" style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 0", borderBottom: i < 4 ? `1px solid ${D.border}` : "none", animationDelay: `${i * 40}ms` }}>
+                <div style={{ width: 22, height: 22, borderRadius: 6, background: D.accentDim, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, fontWeight: 800, color: D.accent, fontFamily: D.mono, flexShrink: 0 }}>{i + 1}</div>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 12, fontWeight: 600, color: D.t1, fontFamily: D.mono, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{a.name}</div>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 3 }}>
+                    <div style={{ flex: 1, height: 3, borderRadius: 2, background: D.border, overflow: "hidden" }}>
+                      <div style={{ width: `${a.yktShare}%`, height: "100%", background: D.accent, borderRadius: 2 }} />
                     </div>
-                    <div style={{ height: 5, borderRadius: 3, background: T.border, overflow: "hidden" }}>
-                      <div style={{ height: "100%", width: `${s.yktShare}%`, background: c, borderRadius: 3 }} />
-                    </div>
+                    <span style={{ fontSize: 10, color: D.accent, fontFamily: D.mono, flexShrink: 0 }}>{a.yktShare}٪</span>
                   </div>
-                );
-              })}
-            </div>
-          </div>
-
-          {teamStats.length > 0 && (
-            <div style={card({ padding: "18px 22px" })}>
-              <p style={{ margin: "0 0 4px", fontSize: 14, fontWeight: 700, color: T.text1 }}>عملکرد تیم‌ها</p>
-              <p style={{ margin: "0 0 14px", fontSize: 12, color: T.text3 }}>سهم یکتانت و تعداد اکانت به تفکیک تیم</p>
-              <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                {teamStats.map((t, i) => {
-                  const c = t.yktShare >= 50 ? T.coral : t.yktShare >= 30 ? T.amber : T.danger;
-                  return (
-                    <div key={i} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 12px", borderRadius: 9, background: T.surface2 }}>
-                      <div style={{ flex: 1 }}>
-                        <p style={{ margin: "0 0 3px", fontSize: 12, color: T.text1, fontWeight: 500 }}>{t.name}</p>
-                        <div style={{ height: 4, borderRadius: 2, background: T.border, overflow: "hidden" }}>
-                          <div style={{ height: "100%", width: `${t.yktShare}%`, background: c, borderRadius: 2 }} />
-                        </div>
-                      </div>
-                      <span style={{ fontSize: 11, color: T.text3, flexShrink: 0 }}>{t.accounts} اکانت</span>
-                      <span style={{ fontSize: 13, fontWeight: 700, color: c, flexShrink: 0 }}>{t.yktShare}٪</span>
-                    </div>
-                  );
-                })}
+                </div>
+                <div style={{ textAlign: "left", flexShrink: 0 }}>
+                  <div style={{ fontSize: 11, fontWeight: 600, color: D.t2, fontFamily: D.mono }}>{formatNumber(a.sessions)}</div>
+                </div>
               </div>
-            </div>
-          )}
-        </div>
-
-        {/* AM Leaderboard */}
-        {amStats.length > 0 && (
-          <div style={card({ padding: "18px 22px" })}>
-            <p style={{ margin: "0 0 4px", fontSize: 14, fontWeight: 700, color: T.text1 }}>عملکرد اکانت منیجرها</p>
-            <p style={{ margin: "0 0 14px", fontSize: 12, color: T.text3 }}>سهم یکتانت، تعداد اکانت و حجم بودجه به تفکیک AM</p>
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: 8 }}>
-              {amStats.slice(0, 12).map((am, i) => {
-                const c = am.yktShare >= 50 ? T.coral : am.yktShare >= 30 ? T.amber : T.danger;
-                return (
-                  <div key={i} style={{ padding: "10px 14px", borderRadius: 10, background: T.surface2, border: `1px solid ${T.border}`, display: "flex", alignItems: "center", gap: 10 }}>
-                    <div style={{ width: 32, height: 32, borderRadius: "50%", background: T.surface, border: `2px solid ${c}`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 13, fontWeight: 700, color: c, flexShrink: 0 }}>{am.name.slice(0, 1)}</div>
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <p style={{ margin: "0 0 2px", fontSize: 12, color: T.text1, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{am.name}</p>
-                      <p style={{ margin: 0, fontSize: 10, color: T.text3 }}>{am.accounts} اکانت · {formatNumber(am.sessions)} سشن</p>
-                    </div>
-                    <span style={{ fontSize: 15, fontWeight: 700, color: c, flexShrink: 0 }}>{am.yktShare}٪</span>
-                  </div>
-                );
-              })}
-            </div>
+            ))}
           </div>
-        )}
 
-        {/* At-Risk + Opportunities */}
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(380px, 1fr))", gap: 16 }}>
-          {atRisk.length > 0 && (
-            <div style={card({ padding: "18px 22px" })}>
-              <p style={{ margin: "0 0 4px", fontSize: 14, fontWeight: 700, color: T.amber }}>⚠ اکانت‌های در معرض خطر</p>
-              <p style={{ margin: "0 0 14px", fontSize: 12, color: T.text3 }}>حجم سشن بالا + سهم یکتانت زیر ۳۵٪</p>
-              <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
+          <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+            {atRisk.length > 0 && (
+              <div className="fu" style={{ background: D.card, border: `1px solid ${D.border}`, borderRadius: 16, padding: "18px 20px" }}>
+                <SectionHeader title="در حال از دست دادن سهم"
+                  action={<button onClick={() => setScreen("alerts")} style={{ fontSize: 11, color: D.red, background: D.redDim, border: `1px solid ${D.redBrd}`, borderRadius: 99, padding: "3px 10px", cursor: "pointer", fontFamily: "Vazirmatn,sans-serif" }}>
+                    {atRisk.length} هشدار
+                  </button>} />
                 {atRisk.map((a, i) => (
-                  <div key={i} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 12px", borderRadius: 9, background: T.amberDim, border: `1px solid ${T.amberBorder}` }}>
+                  <div key={a.name} className="fu" style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8, animationDelay: `${i * 40}ms` }}>
                     <div style={{ flex: 1, minWidth: 0 }}>
-                      <p style={{ margin: "0 0 1px", fontSize: 12, color: T.text1, direction: "ltr", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{a.name}</p>
-                      <p style={{ margin: 0, fontSize: 10, color: T.text3 }}>{a.industry}{a.am ? ` · ${a.am}` : ""}</p>
+                      <div style={{ fontSize: 12, fontFamily: D.mono, color: D.t1, marginBottom: 3, overflow: "hidden", textOverflow: "ellipsis" }}>{a.name}</div>
+                      <Sparkline data={[...Array(7)].map((_, j) => a.yktShare - (6 - j) * 2 + Math.random() * 4)} color={D.red} w={100} h={22} />
                     </div>
-                    <span style={{ fontSize: 11, color: T.text3, flexShrink: 0 }}>{formatNumber(a.sessions)}</span>
-                    <span style={{ fontSize: 14, fontWeight: 700, color: T.amber, flexShrink: 0 }}>{a.yktShare}٪</span>
+                    <div style={{ fontSize: 18, fontWeight: 800, color: D.red, fontFamily: D.mono, letterSpacing: "-1px" }}>{a.yktShare}٪</div>
                   </div>
                 ))}
               </div>
-            </div>
-          )}
+            )}
 
-          {opportunities.length > 0 && (
-            <div style={card({ padding: "18px 22px" })}>
-              <p style={{ margin: "0 0 4px", fontSize: 14, fontWeight: 700, color: T.green }}>◎ فرصت‌های جدید</p>
-              <p style={{ margin: "0 0 14px", fontSize: 12, color: T.text3 }}>سهم یکتانت صفر + حجم سشن بالا — احتمال لید</p>
-              <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
-                {opportunities.map((a, i) => (
-                  <div key={i} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 12px", borderRadius: 9, background: T.greenDim, border: `1px solid ${T.greenBorder}` }}>
+            {leads.length > 0 && (
+              <div className="fu" style={{ background: D.card, border: `1px solid ${D.border}`, borderRadius: 16, padding: "18px 20px", flex: 1 }}>
+                <SectionHeader title="فرصت‌های لید"
+                  action={<button onClick={() => setScreen("leads")} style={{ fontSize: 11, color: D.green, background: D.greenDim, border: `1px solid ${D.greenBrd}`, borderRadius: 99, padding: "3px 10px", cursor: "pointer", fontFamily: "Vazirmatn,sans-serif" }}>
+                    {leads.length} لید ←
+                  </button>} />
+                {leads.slice(0, 4).map((a, i) => (
+                  <div key={a.name} className="fu" style={{ display: "flex", alignItems: "center", gap: 10, padding: "7px 0", borderBottom: i < 3 ? `1px solid ${D.border}` : "none", animationDelay: `${i * 40}ms` }}>
                     <div style={{ flex: 1, minWidth: 0 }}>
-                      <p style={{ margin: "0 0 1px", fontSize: 12, color: T.text1, direction: "ltr", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{a.name}</p>
-                      <p style={{ margin: 0, fontSize: 10, color: T.text3 }}>{a.industry}{a.am ? ` · ${a.am}` : ""}</p>
+                      <div style={{ fontSize: 12, fontFamily: D.mono, color: D.t1, overflow: "hidden", textOverflow: "ellipsis" }}>{a.name}</div>
+                      <div style={{ fontSize: 10, color: D.t3, marginTop: 2 }}>{a.industry}</div>
                     </div>
-                    <span style={{ fontSize: 11, color: T.text3, flexShrink: 0 }}>{formatNumber(a.sessions)}</span>
-                    <span style={{ fontSize: 11, color: T.green, fontWeight: 600, flexShrink: 0 }}>لید</span>
+                    <span style={{ fontSize: 11, color: D.t2, fontFamily: D.mono }}>{formatNumber(a.sessions)}</span>
+                    <span style={{ fontSize: 11, color: D.green, fontWeight: 700, background: D.greenDim, border: `1px solid ${D.greenBrd}`, borderRadius: 6, padding: "2px 7px" }}>لید</span>
                   </div>
                 ))}
               </div>
-            </div>
-          )}
+            )}
+          </div>
         </div>
       </div>
     );
