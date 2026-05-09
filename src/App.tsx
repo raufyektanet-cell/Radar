@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect, useMemo, useRef } from "react";
+import { useState, useCallback, useEffect, useMemo, useRef, useContext, createContext } from "react";
 import * as XLSX from "xlsx";
 import { TEAMS, ADMIN_USER, type SessionUser } from "./teams";
 
@@ -10,31 +10,47 @@ const THEME_KEY = "analyzer:theme";
 const SESSION_KEY = "radar:session";
 const APP_PASSWORD = (import.meta.env.VITE_APP_PASSWORD as string | undefined) || "radar1403";
 
-const DARK = {
-  bg: "#0C0C0E", surface: "#141416", surface2: "#1E1E23",
-  border: "#26262C", border2: "#30303A",
-  text1: "#F0EDE8", text2: "#908E89", text3: "#55524C",
-  coral: "#D4623A", coralDim: "rgba(212,98,58,0.14)", coralBorder: "rgba(212,98,58,0.30)",
-  green: "#1D9E75", greenDim: "rgba(29,158,117,0.14)", greenBorder: "rgba(29,158,117,0.30)",
-  amber: "#C07B28", amberDim: "rgba(192,123,40,0.14)", amberBorder: "rgba(192,123,40,0.30)",
-  danger: "#EF4444", dangerBg: "rgba(239,68,68,0.10)", dangerBorder: "rgba(239,68,68,0.28)",
-  successBg: "rgba(29,158,117,0.12)", successBorder: "rgba(29,158,117,0.28)", successText: "#34D399",
-  blue: "#4A9EE8", blueDim: "rgba(74,158,232,0.13)",
-};
+// ── Design Tokens v2 ──────────────────────────────────────────────────────────
 
-const LIGHT = {
-  bg: "#F5F0E8", surface: "#FFFFFF", surface2: "#EDE8DF",
-  border: "#E0DBD2", border2: "#D3CFC7",
-  text1: "#2C2C2A", text2: "#5F5E5A", text3: "#888780",
-  coral: "#D4623A", coralDim: "rgba(212,98,58,0.10)", coralBorder: "rgba(212,98,58,0.22)",
-  green: "#1D9E75", greenDim: "rgba(29,158,117,0.10)", greenBorder: "rgba(29,158,117,0.22)",
-  amber: "#854F0B", amberDim: "rgba(186,117,23,0.10)", amberBorder: "rgba(186,117,23,0.22)",
-  danger: "#DC2626", dangerBg: "#FEF2F2", dangerBorder: "#FECACA",
-  successBg: "#F0FDF4", successBorder: "#BBF7D0", successText: "#15803D",
-  blue: "#185FA5", blueDim: "rgba(55,138,221,0.10)",
-};
+function makeTokens(isDark: boolean) {
+  const a = "#D4623A", ar = "212,98,58";
+  if (isDark) return {
+    bg: "#070B12", bgDeep: "#040709", surface: "#0D1420", card: "#111927", cardHov: "#161F30",
+    border: "rgba(255,255,255,.06)", border2: "rgba(255,255,255,.11)", border3: "rgba(255,255,255,.18)",
+    accent: a, accentDim: `rgba(${ar},.12)`, accentBrd: `rgba(${ar},.28)`, accentGlow: `rgba(${ar},.4)`, accentHov: "#C45530",
+    green: "#1DB87E", greenDim: "rgba(29,184,126,.12)", greenBrd: "rgba(29,184,126,.28)",
+    amber: "#D97B2A", amberDim: "rgba(217,123,42,.12)", amberBrd: "rgba(217,123,42,.28)",
+    red: "#E05252", redDim: "rgba(224,82,82,.12)", redBrd: "rgba(224,82,82,.28)",
+    blue: "#4A8EDB", blueDim: "rgba(74,142,219,.12)",
+    t1: "#EEF2FF", t2: "rgba(238,242,255,.60)", t3: "rgba(238,242,255,.32)", t4: "rgba(238,242,255,.14)",
+    mono: "'JetBrains Mono', monospace",
+    // legacy aliases kept for upload/login/modal screens
+    surface2: "#0D1420", text1: "#EEF2FF", text2: "rgba(238,242,255,.60)", text3: "rgba(238,242,255,.32)",
+    coral: a, coralDim: `rgba(${ar},.12)`, coralBorder: `rgba(${ar},.28)`,
+    greenBorder: "rgba(29,184,126,.28)", amberBorder: "rgba(217,123,42,.28)",
+    danger: "#E05252", dangerBg: "rgba(224,82,82,.10)", dangerBorder: "rgba(224,82,82,.28)",
+  };
+  return {
+    bg: "#F5F2ED", bgDeep: "#EDE8DF", surface: "#FFFFFF", card: "#FFFFFF", cardHov: "#FAF7F2",
+    border: "rgba(0,0,0,.07)", border2: "rgba(0,0,0,.13)", border3: "rgba(0,0,0,.22)",
+    accent: a, accentDim: `rgba(${ar},.10)`, accentBrd: `rgba(${ar},.22)`, accentGlow: `rgba(${ar},.25)`, accentHov: "#C45530",
+    green: "#15956A", greenDim: "rgba(21,149,106,.10)", greenBrd: "rgba(21,149,106,.22)",
+    amber: "#A0600A", amberDim: "rgba(160,96,10,.10)", amberBrd: "rgba(160,96,10,.22)",
+    red: "#C93535", redDim: "rgba(201,53,53,.10)", redBrd: "rgba(201,53,53,.22)",
+    blue: "#1D5FAA", blueDim: "rgba(29,95,170,.10)",
+    t1: "#0F0E0C", t2: "#4A4540", t3: "#9B9490", t4: "#C8C3BD",
+    mono: "'JetBrains Mono', monospace",
+    // legacy aliases
+    surface2: "#F5F2ED", text1: "#0F0E0C", text2: "#4A4540", text3: "#9B9490",
+    coral: a, coralDim: `rgba(${ar},.10)`, coralBorder: `rgba(${ar},.22)`,
+    greenBorder: "rgba(21,149,106,.22)", amberBorder: "rgba(160,96,10,.22)",
+    danger: "#C93535", dangerBg: "rgba(201,53,53,.08)", dangerBorder: "rgba(201,53,53,.22)",
+  };
+}
 
-type Theme = typeof DARK;
+type Theme = ReturnType<typeof makeTokens>;
+const ThemeCtx = createContext<Theme>(makeTokens(true));
+function useD() { return useContext(ThemeCtx); }
 
 const AGENCY_COLORS: Record<string, string> = {
   "یکتانت": "#D4623A", "تپسل": "#3B82F6", "ادکسو": "#8B5CF6", "آپارات": "#EF4444",
@@ -190,6 +206,30 @@ function formatNumber(n: number): string {
   return String(n);
 }
 
+function fmtMoney(n: number): string {
+  if (n >= 1000000000) return `${(n / 1000000000).toFixed(1)}B`;
+  if (n >= 1000000) return `${Math.round(n / 1000000)}M`;
+  return `${Math.round(n / 1000)}K`;
+}
+
+function toJalali(date: Date): string {
+  const months = ["فروردین","اردیبهشت","خرداد","تیر","مرداد","شهریور","مهر","آبان","آذر","دی","بهمن","اسفند"];
+  const gy = date.getFullYear(), gm = date.getMonth() + 1, gd = date.getDate();
+  const leap = (gy % 4 === 0 && gy % 100 !== 0) || gy % 400 === 0;
+  const gDays = [31, leap ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+  let gDno = 365 * gy + Math.floor((gy + 3) / 4) - Math.floor((gy + 99) / 100) + Math.floor((gy + 399) / 400);
+  for (let i = 0; i < gm - 1; i++) gDno += gDays[i];
+  gDno += gd - 1;
+  let jDno = gDno - 79;
+  const jNp = Math.floor(jDno / 12053); jDno %= 12053;
+  let jy = 979 + 33 * jNp + 4 * Math.floor(jDno / 1461); jDno %= 1461;
+  if (jDno >= 366) { jy += Math.floor((jDno - 1) / 365); jDno = (jDno - 1) % 365; }
+  const jMd = [31,31,31,31,31,31,30,30,30,30,30,29];
+  let jm = 0;
+  for (; jm < 12 && jDno >= jMd[jm]; jm++) jDno -= jMd[jm];
+  return `${jDno + 1} ${months[jm]} ${jy}`;
+}
+
 interface Advertiser { name: string; ownerid: string; manager: string; performanceManager?: string; supervisor?: string; team?: string; summary?: string; note?: string; agencies: Agency[]; industry1?: string; industry2?: string; }
 interface Competitor { platform: string; newclients: string; topclients: string; note: string; }
 interface AnalysisResult { dateLabel: string; advertisers: Advertiser[]; leads: Advertiser[]; competitors: Competitor[]; market: string; disclaimer: string; id?: string; savedAt?: number; }
@@ -225,9 +265,73 @@ function downloadHTML(result: AnalysisResult) {
   URL.revokeObjectURL(url);
 }
 
-// ── UI Components ─────────────────────────────────────────────────────────────
+// ── Global CSS ────────────────────────────────────────────────────────────────
 
-function AgencyDonut({ agencies, size = 72 }: { agencies: Agency[]; size?: number }) {
+const GLOBAL_CSS = `
+@import url('https://fonts.googleapis.com/css2?family=Vazirmatn:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600;700&display=swap');
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{overflow-y:auto;overflow-x:hidden}
+@keyframes fu{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
+@keyframes fadeUp{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:translateY(0)}}
+@keyframes radarSweep{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}
+@keyframes radarPulse{0%{r:5;opacity:.6}100%{r:22;opacity:0}}
+@keyframes dotPop{0%,100%{opacity:0;r:0}50%{opacity:1;r:4}}
+@keyframes barGrow{from{transform:scaleX(0)}to{transform:scaleX(1)}}
+@keyframes spin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}
+@keyframes shimmer{0%{background-position:200% 0}100%{background-position:-200% 0}}
+@keyframes slideInModal{from{opacity:0;transform:translateY(-14px) scale(.97)}to{opacity:1;transform:translateY(0) scale(1)}}
+.fu{animation:fu .3s ease both}
+`;
+
+// ── Shared UI Components v2 ───────────────────────────────────────────────────
+
+function Sparkline({ data, color, w = 80, h = 24, filled = false }: { data: number[]; color?: string; w?: number; h?: number; filled?: boolean }) {
+  const D = useD();
+  if (!color) color = D.accent;
+  if (!data || data.length < 2) return <div style={{ width: w, height: h }} />;
+  const max = Math.max(...data, 1), min = Math.min(...data, 0), rng = max - min || 1;
+  const pts = data.map((v, i) => [i / (data.length - 1) * w, h - 2 - ((v - min) / rng) * (h - 4)]);
+  const line = "M" + pts.map(p => p.join(",")).join(" L");
+  if (filled) {
+    const fill = line + ` L${pts[pts.length - 1][0]},${h} L0,${h} Z`;
+    return (
+      <svg width={w} height={h} viewBox={`0 0 ${w} ${h}`} style={{ display: "block", overflow: "visible" }}>
+        <defs><linearGradient id={`sg${color.replace(/[^a-z0-9]/gi, "")}`} x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor={color} stopOpacity=".3" /><stop offset="100%" stopColor={color} stopOpacity="0" /></linearGradient></defs>
+        <path d={fill} fill={`url(#sg${color.replace(/[^a-z0-9]/gi, "")})`} />
+        <path d={line} fill="none" stroke={color} strokeWidth="1.5" strokeLinejoin="round" strokeLinecap="round" />
+      </svg>
+    );
+  }
+  return (
+    <svg width={w} height={h} viewBox={`0 0 ${w} ${h}`} style={{ display: "block", overflow: "visible" }}>
+      <path d={line} fill="none" stroke={color} strokeWidth="1.5" strokeLinejoin="round" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+function MiniLineChart({ data, labels, color, h = 80 }: { data: number[]; labels?: string[]; color?: string; h?: number }) {
+  const D = useD();
+  if (!color) color = D.accent;
+  if (!data || data.length < 2) return null;
+  const W = 300;
+  const max = Math.max(...data, 1), min = Math.min(...data, 0), rng = max - min || 1;
+  const pts = data.map((v, i) => [i / (data.length - 1) * (W - 24) + 12, h - 16 - ((v - min) / rng) * (h - 28)]);
+  const line = "M" + pts.map(p => p.join(",")).join(" L");
+  const fill = line + ` L${pts[pts.length - 1][0]},${h - 4} L12,${h - 4} Z`;
+  const gId = `mlg${color.replace(/[^a-z0-9]/gi, "")}`;
+  return (
+    <svg width={W} height={h} viewBox={`0 0 ${W} ${h}`} style={{ display: "block", width: "100%" }}>
+      <defs><linearGradient id={gId} x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor={color} stopOpacity=".35" /><stop offset="100%" stopColor={color} stopOpacity="0" /></linearGradient></defs>
+      <path d={fill} fill={`url(#${gId})`} />
+      <path d={line} fill="none" stroke={color} strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" />
+      {labels && pts.map((p, i) => <text key={i} x={p[0]} y={h - 2} textAnchor="middle" fontSize="9" fill={D.t3} fontFamily={D.mono}>{labels[i]}</text>)}
+      <circle cx={pts[pts.length - 1][0]} cy={pts[pts.length - 1][1]} r="3" fill={color} />
+    </svg>
+  );
+}
+
+function DonutChart({ agencies, size = 72 }: { agencies: Agency[]; size?: number }) {
+  const D = useD();
   const r = size * 0.36, cx = size / 2, cy = size / 2, circ = 2 * Math.PI * r;
   const total = agencies.reduce((s, a) => s + a.value, 0);
   if (!total) return <div style={{ width: size, height: size }} />;
@@ -241,28 +345,41 @@ function AgencyDonut({ agencies, size = 72 }: { agencies: Agency[]; size?: numbe
   const yPct = ykt ? Math.round(ykt.value / total * 100) : 0;
   return (
     <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} style={{ flexShrink: 0 }}>
-      <circle cx={cx} cy={cy} r={r} fill="none" stroke="rgba(128,128,128,0.12)" strokeWidth={size * 0.11} />
+      <circle cx={cx} cy={cy} r={r} fill="none" stroke={D.border2} strokeWidth={size * 0.11} />
       {slices.map((s, i) => (
         <circle key={i} cx={cx} cy={cy} r={r} fill="none" stroke={s.color} strokeWidth={size * 0.11}
           strokeDasharray={`${s.dash} ${s.gap}`} strokeDashoffset={s.dashoffset}
           transform={`rotate(-90 ${cx} ${cy})`} strokeLinecap="round" />
       ))}
       <text x={cx} y={cy} textAnchor="middle" dominantBaseline="middle"
-        fontSize={size * 0.17} fontWeight="600" fill={ykt ? "#D4623A" : "#888"} fontFamily="system-ui">
+        fontSize={size * 0.17} fontWeight="700" fill={ykt ? D.accent : D.t3} fontFamily={D.mono}>
         {yPct}٪
       </text>
     </svg>
   );
 }
 
-function AgencyLegend({ agencies, T }: { agencies: Agency[]; T: Theme }) {
+function AgencyBar({ agencies, h = 4 }: { agencies: Agency[]; h?: number }) {
   const total = agencies.reduce((s, a) => s + a.value, 0);
   if (!total) return null;
   return (
-    <div style={{ display: "flex", flexWrap: "wrap", gap: "3px 10px", marginTop: 6 }}>
+    <div style={{ display: "flex", borderRadius: h, overflow: "hidden", height: h, margin: "4px 0" }}>
       {agencies.map((a, i) => (
-        <span key={i} style={{ fontSize: 11, color: T.text3, display: "flex", alignItems: "center", gap: 4 }}>
-          <span style={{ width: 7, height: 7, borderRadius: "50%", background: a.color, display: "inline-block", flexShrink: 0 }} />
+        <div key={i} style={{ flex: a.value, background: a.color, minWidth: 1 }} />
+      ))}
+    </div>
+  );
+}
+
+function AgencyLegend({ agencies, compact = false }: { agencies: Agency[]; compact?: boolean; T?: Theme }) {
+  const D = useD();
+  const total = agencies.reduce((s, a) => s + a.value, 0);
+  if (!total) return null;
+  return (
+    <div style={{ display: "flex", flexWrap: "wrap", gap: compact ? "2px 8px" : "3px 10px", marginTop: 4 }}>
+      {agencies.map((a, i) => (
+        <span key={i} style={{ fontSize: compact ? 10 : 11, color: D.t3, display: "flex", alignItems: "center", gap: 4 }}>
+          <span style={{ width: 6, height: 6, borderRadius: "50%", background: a.color, display: "inline-block", flexShrink: 0 }} />
           {a.name} {Math.round(a.value / total * 100)}٪
         </span>
       ))}
@@ -270,40 +387,101 @@ function AgencyLegend({ agencies, T }: { agencies: Agency[]; T: Theme }) {
   );
 }
 
-function RadarHero({ T }: { T: Theme }) {
+function Badge({ label, color }: { label: string; color: string }) {
   return (
-    <div style={{ position: "relative", width: 200, height: 200, margin: "0 auto 28px" }}>
-      <svg width="200" height="200" viewBox="0 0 200 200">
-        <circle cx="100" cy="100" r="85" fill="none" stroke={T.coral} strokeWidth="0.5" opacity="0.15" />
-        <circle cx="100" cy="100" r="60" fill="none" stroke={T.coral} strokeWidth="0.5" opacity="0.22" />
-        <circle cx="100" cy="100" r="36" fill="none" stroke={T.coral} strokeWidth="0.5" opacity="0.32" />
-        <line x1="100" y1="15" x2="100" y2="185" stroke={T.coral} strokeWidth="0.4" opacity="0.1" />
-        <line x1="15" y1="100" x2="185" y2="100" stroke={T.coral} strokeWidth="0.4" opacity="0.1" />
+    <span style={{ fontSize: 9.5, color, background: color + "22", border: `1px solid ${color}44`, padding: "1px 7px", borderRadius: 20, fontWeight: 600, whiteSpace: "nowrap" }}>
+      {label}
+    </span>
+  );
+}
+
+function StatusBadge({ status }: { status: string }) {
+  const D = useD();
+  const MAP: Record<string, { l: string; c: string }> = {
+    declining: { l: "کاهشی", c: D.red }, stable: { l: "پایدار", c: D.green },
+    growing: { l: "رشد", c: D.green }, reactivated: { l: "بازگشت", c: D.amber },
+    inactive: { l: "غیرفعال", c: D.t3 }, lead: { l: "لید", c: D.blue },
+  };
+  const s = MAP[status] || { l: status, c: D.t3 };
+  return <Badge label={s.l} color={s.c} />;
+}
+
+function KpiCard({ label, value, sub, color, delta, delay = 0 }: { label: string; value: string | number; sub?: string; color?: string; delta?: number; delay?: number }) {
+  const D = useD();
+  const c = color || D.accent;
+  return (
+    <div className="fu" style={{ background: D.card, border: `1px solid ${D.border}`, borderRadius: 14, padding: "14px 16px", animationDelay: `${delay}ms`, position: "relative", overflow: "hidden" }}>
+      <div style={{ position: "absolute", top: 0, right: 0, width: 80, height: 80, borderRadius: "0 0 0 80px", background: c, opacity: .06, pointerEvents: "none" }} />
+      <div style={{ fontSize: 10, color: D.t3, textTransform: "uppercase", letterSpacing: ".08em", fontWeight: 600, marginBottom: 6 }}>{label}</div>
+      <div style={{ fontSize: 26, fontWeight: 800, color: c, fontFamily: D.mono, lineHeight: 1, letterSpacing: "-1px" }}>{value}</div>
+      {sub && <div style={{ fontSize: 11, color: D.t3, marginTop: 5 }}>{sub}</div>}
+      {delta != null && (
+        <div style={{ fontSize: 11, color: delta >= 0 ? D.green : D.red, fontFamily: D.mono, marginTop: 4 }}>
+          {delta >= 0 ? "▲" : "▼"} {Math.abs(delta)}٪ هفته گذشته
+        </div>
+      )}
+    </div>
+  );
+}
+
+function SectionHeader({ title, sub, action }: { title: string; sub?: string; action?: React.ReactNode }) {
+  const D = useD();
+  return (
+    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14, paddingBottom: 10, borderBottom: `1px solid ${D.border}` }}>
+      <div>
+        <div style={{ fontSize: 15, fontWeight: 700, color: D.t1, letterSpacing: "-.2px" }}>{title}</div>
+        {sub && <div style={{ fontSize: 11, color: D.t3, marginTop: 2, fontFamily: D.mono }}>{sub}</div>}
+      </div>
+      {action}
+    </div>
+  );
+}
+
+function Pill({ label, active, onClick }: { label: string; active: boolean; onClick: () => void }) {
+  const D = useD();
+  return (
+    <button onClick={onClick} style={{ padding: "5px 12px", borderRadius: 99, border: `1px solid ${active ? D.accentBrd : D.border}`, background: active ? D.accentDim : "transparent", color: active ? D.accent : D.t2, fontSize: 11, fontWeight: active ? 600 : 400, cursor: "pointer", whiteSpace: "nowrap", transition: "all .14s", fontFamily: "Vazirmatn,sans-serif" }}>
+      {label}
+    </button>
+  );
+}
+
+function RadarHero() {
+  const D = useD();
+  return (
+    <div style={{ position: "relative", width: 180, height: 180, margin: "0 auto 20px" }}>
+      <svg width="180" height="180" viewBox="0 0 200 200">
+        <circle cx="100" cy="100" r="85" fill="none" stroke={D.accent} strokeWidth="0.5" opacity="0.15" />
+        <circle cx="100" cy="100" r="60" fill="none" stroke={D.accent} strokeWidth="0.5" opacity="0.22" />
+        <circle cx="100" cy="100" r="36" fill="none" stroke={D.accent} strokeWidth="0.5" opacity="0.32" />
+        <line x1="100" y1="15" x2="100" y2="185" stroke={D.accent} strokeWidth="0.4" opacity="0.1" />
+        <line x1="15" y1="100" x2="185" y2="100" stroke={D.accent} strokeWidth="0.4" opacity="0.1" />
         <g style={{ transformOrigin: "100px 100px", animation: "radarSweep 3s linear infinite" }}>
-          <path d="M100,100 L100,15 A85,85 0 0,1 185,100 Z" fill={T.coral} opacity="0.08" />
-          <line x1="100" y1="100" x2="100" y2="15" stroke={T.coral} strokeWidth="1.5" opacity="0.6" />
+          <path d="M100,100 L100,15 A85,85 0 0,1 185,100 Z" fill={D.accent} opacity="0.08" />
+          <line x1="100" y1="100" x2="100" y2="15" stroke={D.accent} strokeWidth="1.5" opacity="0.6" />
         </g>
-        <circle cx="142" cy="68" r="4" fill={T.coral} style={{ animation: "dotPop 3s 0.9s ease-in-out infinite" }} />
-        <circle cx="72" cy="140" r="3" fill={T.green} style={{ animation: "dotPop 3s 1.7s ease-in-out infinite" }} />
-        <circle cx="158" cy="128" r="2.5" fill={T.amber} style={{ animation: "dotPop 3s 2.3s ease-in-out infinite" }} />
-        <circle cx="100" cy="100" r="5" fill={T.coral} />
-        <circle cx="100" cy="100" r="5" fill={T.coral} opacity="0.6" style={{ animation: "radarPulse 2.4s ease-out infinite" }} />
+        <circle cx="142" cy="68" r="4" fill={D.accent} style={{ animation: "dotPop 3s 0.9s ease-in-out infinite" }} />
+        <circle cx="72" cy="140" r="3" fill={D.green} style={{ animation: "dotPop 3s 1.7s ease-in-out infinite" }} />
+        <circle cx="158" cy="128" r="2.5" fill={D.amber} style={{ animation: "dotPop 3s 2.3s ease-in-out infinite" }} />
+        <circle cx="100" cy="100" r="5" fill={D.accent} />
+        <circle cx="100" cy="100" r="5" fill={D.accent} opacity="0.6" style={{ animation: "radarPulse 2.4s ease-out infinite" }} />
       </svg>
     </div>
   );
 }
 
-function Toast({ msg, type, onDone, T }: { msg: string; type: "success" | "error"; onDone: () => void; T: Theme }) {
+function Toast({ msg, type, onDone }: { msg: string; type: "success" | "error"; onDone: () => void }) {
+  const D = useD();
   useEffect(() => { const t = setTimeout(onDone, 3000); return () => clearTimeout(t); }, [onDone]);
-  const bg = type === "success" ? T.green : T.danger;
   return (
-    <div style={{ position: "fixed", bottom: 24, left: "50%", transform: "translateX(-50%)", background: bg, color: "#fff", padding: "10px 20px", borderRadius: 12, fontSize: 13, fontWeight: 500, zIndex: 9999, animation: "fadeUp 0.2s ease both", whiteSpace: "nowrap", boxShadow: "0 4px 20px rgba(0,0,0,0.3)" }}>
+    <div style={{ position: "fixed", bottom: 24, left: "50%", transform: "translateX(-50%)", background: type === "success" ? D.green : D.red, color: "#fff", padding: "10px 20px", borderRadius: 12, fontSize: 13, fontWeight: 500, zIndex: 9999, animation: "fadeUp 0.2s ease both", whiteSpace: "nowrap", boxShadow: "0 4px 20px rgba(0,0,0,0.3)" }}>
       {msg}
     </div>
   );
 }
 
-function DetailModal({ adv, type, T, onClose, onRegen, regenLoading }: { adv: Advertiser; type: string; T: Theme; onClose: () => void; onRegen: () => void; regenLoading: boolean }) {
+function DetailModal({ adv, type, onClose, onRegen, regenLoading }: { adv: Advertiser; type: string; onClose: () => void; onRegen: () => void; regenLoading: boolean }) {
+  const D = useD();
   useEffect(() => {
     const esc = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
     document.addEventListener("keydown", esc);
@@ -312,47 +490,45 @@ function DetailModal({ adv, type, T, onClose, onRegen, regenLoading }: { adv: Ad
   const total = adv.agencies.reduce((s, a) => s + a.value, 0);
   return (
     <div role="dialog" aria-modal="true" aria-label={`جزئیات ${adv.name}`} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", zIndex: 500, display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }} onClick={onClose}>
-      <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 20, padding: "24px 28px", width: "100%", maxWidth: 480, animation: "slideInModal 0.22s ease both", direction: "rtl" }} onClick={e => e.stopPropagation()}>
+      <div style={{ background: D.card, border: `1px solid ${D.border2}`, borderRadius: 20, padding: "24px 28px", width: "100%", maxWidth: 480, animation: "slideInModal 0.22s ease both", direction: "rtl" }} onClick={e => e.stopPropagation()}>
         <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: 20 }}>
           <div>
-            <div style={{ fontSize: 17, fontWeight: 600, color: T.text1, direction: "ltr" }}>{adv.name}</div>
-            <div style={{ fontSize: 12, color: T.text3, marginTop: 3, direction: "ltr" }}>#{adv.ownerid}{adv.manager ? ` · ` : ""}{adv.manager && <span style={{ color: T.coral }}>{adv.manager}</span>}</div>
+            <div style={{ fontSize: 17, fontWeight: 600, color: D.t1, direction: "ltr" }}>{adv.name}</div>
+            <div style={{ fontSize: 12, color: D.t3, marginTop: 3, direction: "ltr" }}>#{adv.ownerid}{adv.manager ? ` · ` : ""}{adv.manager && <span style={{ color: D.accent }}>{adv.manager}</span>}</div>
           </div>
           <div style={{ display: "flex", gap: 8 }}>
-            <button onClick={onRegen} disabled={regenLoading} aria-label="بازسازی تحلیل" style={{ padding: "6px 12px", borderRadius: 8, border: `1px solid ${T.border}`, background: "transparent", color: T.text2, fontSize: 12, cursor: "pointer", display: "flex", alignItems: "center", gap: 5 }}>
+            <button onClick={onRegen} disabled={regenLoading} aria-label="بازسازی تحلیل" style={{ padding: "6px 12px", borderRadius: 8, border: `1px solid ${D.border}`, background: "transparent", color: D.t2, fontSize: 12, cursor: "pointer", display: "flex", alignItems: "center", gap: 5 }}>
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={regenLoading ? { animation: "spin 0.8s linear infinite" } : {}}><polyline points="23 4 23 10 17 10" /><path d="M20.49 15a9 9 0 11-2.12-9.36L23 10" /></svg>
               بازسازی
             </button>
-            <button onClick={onClose} aria-label="بستن" style={{ width: 40, height: 40, borderRadius: 8, border: `1px solid ${T.border}`, background: "transparent", color: T.text3, cursor: "pointer", fontSize: 20, lineHeight: 1, display: "flex", alignItems: "center", justifyContent: "center" }}>×</button>
+            <button onClick={onClose} aria-label="بستن" style={{ width: 40, height: 40, borderRadius: 8, border: `1px solid ${D.border}`, background: "transparent", color: D.t3, cursor: "pointer", fontSize: 20, lineHeight: 1, display: "flex", alignItems: "center", justifyContent: "center" }}>×</button>
           </div>
         </div>
         {total > 0 && (
           <div style={{ marginBottom: 18 }}>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 24, marginBottom: 14 }}>
-              <AgencyDonut agencies={adv.agencies} size={100} />
-              <AgencyLegend agencies={adv.agencies} T={T} />
+              <DonutChart agencies={adv.agencies} size={100} />
+              <AgencyLegend agencies={adv.agencies} />
             </div>
-            <div style={{ display: "flex", borderRadius: 6, overflow: "hidden", height: 6 }}>
-              {adv.agencies.map((a, i) => <div key={i} style={{ flex: a.value, background: a.color }} />)}
-            </div>
+            <AgencyBar agencies={adv.agencies} h={6} />
           </div>
         )}
         {(adv.industry1 || adv.industry2) && (
           <div style={{ display: "flex", gap: 8, marginBottom: 10, flexWrap: "wrap" }}>
-            {adv.industry1 && <span style={{ fontSize: 12, color: T.blue, background: T.blueDim, padding: "4px 12px", borderRadius: 20, border: `1px solid rgba(74,158,232,0.2)` }}>{adv.industry1}</span>}
-            {adv.industry2 && <span style={{ fontSize: 12, color: T.text3, background: T.surface2, padding: "4px 12px", borderRadius: 20, border: `1px solid ${T.border}` }}>{adv.industry2}</span>}
+            {adv.industry1 && <Badge label={adv.industry1} color={D.blue} />}
+            {adv.industry2 && <Badge label={adv.industry2} color={D.t3} />}
           </div>
         )}
         {(adv.team || adv.manager || adv.performanceManager || adv.supervisor) && (
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 14 }}>
-            {adv.team && <div style={{ padding: "8px 12px", borderRadius: 10, background: T.surface2, border: `1px solid ${T.border}` }}><p style={{ margin: "0 0 2px", fontSize: 10, color: T.text3 }}>تیم</p><p style={{ margin: 0, fontSize: 12, fontWeight: 600, color: T.text1 }}>{adv.team}</p></div>}
-            {adv.manager && <div style={{ padding: "8px 12px", borderRadius: 10, background: T.surface2, border: `1px solid ${T.border}` }}><p style={{ margin: "0 0 2px", fontSize: 10, color: T.text3 }}>اکانت منیجر</p><p style={{ margin: 0, fontSize: 12, fontWeight: 600, color: T.coral }}>{adv.manager}</p></div>}
-            {adv.performanceManager && <div style={{ padding: "8px 12px", borderRadius: 10, background: T.surface2, border: `1px solid ${T.border}` }}><p style={{ margin: "0 0 2px", fontSize: 10, color: T.text3 }}>پرفورمنس منیجر</p><p style={{ margin: 0, fontSize: 12, fontWeight: 600, color: T.blue }}>{adv.performanceManager}</p></div>}
-            {adv.supervisor && <div style={{ padding: "8px 12px", borderRadius: 10, background: T.surface2, border: `1px solid ${T.border}` }}><p style={{ margin: "0 0 2px", fontSize: 10, color: T.text3 }}>سوپروایزر</p><p style={{ margin: 0, fontSize: 12, fontWeight: 600, color: T.amber }}>{adv.supervisor}</p></div>}
+            {adv.team && <div style={{ padding: "8px 12px", borderRadius: 10, background: D.surface, border: `1px solid ${D.border}` }}><p style={{ margin: "0 0 2px", fontSize: 10, color: D.t3 }}>تیم</p><p style={{ margin: 0, fontSize: 12, fontWeight: 600, color: D.t1 }}>{adv.team}</p></div>}
+            {adv.manager && <div style={{ padding: "8px 12px", borderRadius: 10, background: D.surface, border: `1px solid ${D.border}` }}><p style={{ margin: "0 0 2px", fontSize: 10, color: D.t3 }}>اکانت منیجر</p><p style={{ margin: 0, fontSize: 12, fontWeight: 600, color: D.accent }}>{adv.manager}</p></div>}
+            {adv.performanceManager && <div style={{ padding: "8px 12px", borderRadius: 10, background: D.surface, border: `1px solid ${D.border}` }}><p style={{ margin: "0 0 2px", fontSize: 10, color: D.t3 }}>پرفورمنس منیجر</p><p style={{ margin: 0, fontSize: 12, fontWeight: 600, color: D.blue }}>{adv.performanceManager}</p></div>}
+            {adv.supervisor && <div style={{ padding: "8px 12px", borderRadius: 10, background: D.surface, border: `1px solid ${D.border}` }}><p style={{ margin: "0 0 2px", fontSize: 10, color: D.t3 }}>سوپروایزر</p><p style={{ margin: 0, fontSize: 12, fontWeight: 600, color: D.amber }}>{adv.supervisor}</p></div>}
           </div>
         )}
-        <div style={{ background: T.surface2, borderRadius: 12, padding: "14px 16px" }}>
-          <p style={{ margin: 0, fontSize: 14, color: T.text2, lineHeight: 2, direction: "rtl" }}>
+        <div style={{ background: D.surface, borderRadius: 12, padding: "14px 16px" }}>
+          <p style={{ margin: 0, fontSize: 14, color: D.t2, lineHeight: 2, direction: "rtl" }}>
             {type === "lead" ? adv.note : adv.summary}
           </p>
         </div>
@@ -363,7 +539,8 @@ function DetailModal({ adv, type, T, onClose, onRegen, regenLoading }: { adv: Ad
 
 // ── Login Page ────────────────────────────────────────────────────────────────
 
-function LoginPage({ T, onLogin }: { T: Theme; onLogin: (u: SessionUser) => void }) {
+function LoginPage({ onLogin }: { onLogin: (u: SessionUser) => void }) {
+  const T = useD();
   const [selected, setSelected] = useState<SessionUser | null>(null);
   const [pw, setPw] = useState("");
   const [err, setErr] = useState("");
@@ -387,11 +564,10 @@ function LoginPage({ T, onLogin }: { T: Theme; onLogin: (u: SessionUser) => void
     onLogin(selected);
   };
 
-  const deptColors: Record<string, string> = { "بیزینس": T.coral, "محصول": T.blue, "فروش": T.green, "": T.text3 };
+  const deptColors: Record<string, string> = { "بیزینس": T.accent, "محصول": T.blue, "فروش": T.green, "": T.t3 };
 
   return (
     <div style={{ minHeight: "100dvh", background: T.bg, display: "flex", alignItems: "center", justifyContent: "center", padding: 24, direction: "rtl", fontFamily: "'Vazirmatn', system-ui, sans-serif" }}>
-      <style>{`@keyframes fadeUp{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:translateY(0)}} *{box-sizing:border-box}`}</style>
       <div style={{ width: "100%", maxWidth: 560, animation: "fadeUp 0.3s ease both" }}>
         {/* Header */}
         <div style={{ textAlign: "center", marginBottom: 32 }}>
@@ -542,7 +718,7 @@ export default function App() {
   const [isDark, setIsDark] = useState(() => {
     try { return localStorage.getItem(THEME_KEY) === "dark"; } catch { return false; }
   });
-  const T = isDark ? DARK : LIGHT;
+  const T = useMemo(() => makeTokens(isDark), [isDark]);
 
   useEffect(() => { try { localStorage.setItem(THEME_KEY, isDark ? "dark" : "light"); } catch { } }, [isDark]);
 
@@ -812,7 +988,7 @@ export default function App() {
         onMouseEnter={e => (e.currentTarget.style.borderColor = accentBorder)}
         onMouseLeave={e => (e.currentTarget.style.borderColor = T.border)}
         className="fade-up">
-        <AgencyDonut agencies={adv.agencies} size={64} />
+        <DonutChart agencies={adv.agencies} size={64} />
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 4 }}>
             <span style={{ fontSize: 14, fontWeight: 600, color: T.text1, direction: "ltr" }}>{adv.name}</span>
@@ -831,7 +1007,7 @@ export default function App() {
           <p style={{ margin: "0 0 8px", fontSize: 12, color: T.text2, lineHeight: 1.7, display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>
             {type === "lead" ? adv.note : adv.summary}
           </p>
-          <AgencyLegend agencies={adv.agencies} T={T} />
+          <AgencyLegend agencies={adv.agencies} />
         </div>
         {yPct > 0 && (
           <div style={{ textAlign: "center", flexShrink: 0 }}>
@@ -846,7 +1022,7 @@ export default function App() {
   // ─ Loading screen ───────────────────────────────────────────────────────────
   const LoadingScreen = () => (
     <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", minHeight: "60vh", gap: 28 }}>
-      <RadarHero T={T} />
+      <RadarHero />
       <div style={{ width: "100%", maxWidth: 320 }}>
         <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
           <span style={{ fontSize: 13, color: T.text2 }}>در حال آنالیز داده‌ها...</span>
@@ -866,7 +1042,7 @@ export default function App() {
       {step === "loading" ? <LoadingScreen /> : step === "upload" ? (
         <>
           <div style={{ textAlign: "center", paddingTop: 20 }}>
-            <RadarHero T={T} />
+            <RadarHero />
             <h1 style={{ margin: "0 0 8px", fontSize: 22, fontWeight: 700, color: T.text1, letterSpacing: "-0.3px" }}>Radar</h1>
             <p style={{ margin: 0, fontSize: 14, color: T.text3 }}>آنالیز رقابتی روزانه یکتانت</p>
           </div>
@@ -1245,7 +1421,7 @@ export default function App() {
   const DashboardScreen = () => {
     if (!csvData) return (
       <div style={{ textAlign: "center", padding: "5rem 2rem", display: "flex", flexDirection: "column", alignItems: "center", gap: 16 }}>
-        <RadarHero T={T} />
+        <RadarHero />
         <p style={{ margin: 0, fontSize: 15, fontWeight: 600, color: T.text1 }}>داشبورد آنالیز رقابتی</p>
         <p style={{ margin: 0, fontSize: 13, color: T.text3 }}>ابتدا یک فایل XLSX آپلود کنید تا داشبورد فعال شود</p>
         <button onClick={() => setScreen("upload")} style={{ padding: "10px 24px", borderRadius: 12, border: "none", background: T.coral, color: "#fff", fontSize: 14, fontWeight: 600, cursor: "pointer" }}>رفتن به آنالیز</button>
@@ -1551,48 +1727,46 @@ export default function App() {
     );
   };
 
-  const globalStyles = `
-    @keyframes radarSweep { to { transform: rotate(360deg); } }
-    @keyframes radarPulse { 0%{transform:scale(1);opacity:0.6} 100%{transform:scale(3.5);opacity:0} }
-    @keyframes dotPop { 0%,100%{opacity:0;transform:scale(0.5)} 30%,70%{opacity:0.9;transform:scale(1)} }
-    @keyframes fadeUp { from{opacity:0;transform:translateY(10px)} to{opacity:1;transform:translateY(0)} }
-    @keyframes slideInModal { from{opacity:0;transform:scale(0.96) translateY(10px)} to{opacity:1;transform:scale(1) translateY(0)} }
-    @keyframes spin { to{transform:rotate(360deg)} }
-    .fade-up { animation: fadeUp 0.22s ease both; }
-    * { box-sizing: border-box; }
-    ::-webkit-scrollbar { width: 5px; height: 5px; }
-    ::-webkit-scrollbar-track { background: transparent; }
-    ::-webkit-scrollbar-thumb { background: ${T.border}; border-radius: 10px; }
-    select option { background: ${T.surface}; color: ${T.text1}; }
-    html, body { overflow-y: auto; overflow-x: hidden; }
-    button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible { outline: 2px solid ${T.coral}; outline-offset: 2px; border-radius: 4px; }
-    [role="button"]:focus-visible { outline: 2px solid ${T.coral}; outline-offset: 2px; border-radius: 12px; }
-  `;
+  const tokens = useMemo(() => makeTokens(isDark), [isDark]);
 
-  if (!session) return <><style>{globalStyles}</style><LoginPage T={T} onLogin={setSession} /></>;
+  if (!session) return (
+    <ThemeCtx.Provider value={tokens}>
+      <style>{GLOBAL_CSS}</style>
+      <LoginPage onLogin={setSession} />
+    </ThemeCtx.Provider>
+  );
 
   return (
-    <div style={{ minHeight: "100dvh", background: T.bg, color: T.text1, direction: "rtl", fontFamily: "'Vazirmatn', system-ui, sans-serif", overflowX: "hidden" }}>
-      <style>{globalStyles}</style>
+    <ThemeCtx.Provider value={tokens}>
+      <div style={{ minHeight: "100dvh", background: tokens.bg, color: tokens.t1, direction: "rtl", fontFamily: "'Vazirmatn', system-ui, sans-serif", overflowX: "hidden" }}>
+        <style>{GLOBAL_CSS}</style>
+        <style>{`
+          ::-webkit-scrollbar { width: 5px; height: 5px; }
+          ::-webkit-scrollbar-track { background: transparent; }
+          ::-webkit-scrollbar-thumb { background: ${tokens.border2}; border-radius: 10px; }
+          select option { background: ${tokens.card}; color: ${tokens.t1}; }
+          button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible { outline: 2px solid ${tokens.accent}; outline-offset: 2px; border-radius: 4px; }
+        `}</style>
 
-      <Sidebar screen={screen} setScreen={setScreen} isDark={isDark} setIsDark={setIsDark} hasResult={!!result} hasCsv={!!csvData} session={session} onLogout={handleLogout} T={T} />
+        <Sidebar screen={screen} setScreen={setScreen} isDark={isDark} setIsDark={setIsDark} hasResult={!!result} hasCsv={!!csvData} session={session} onLogout={handleLogout} T={tokens} />
 
-      <div style={{ marginRight: 80 }}>
-        <div style={{ maxWidth: 1100, width: "100%", margin: "0 auto", padding: "40px 40px 100px" }}>
-          {screen === "upload" && <UploadScreen />}
-          {screen === "dashboard" && <DashboardScreen />}
-          {screen === "results" && <ResultsScreen />}
-          {screen === "reports" && <ReportsScreen />}
-          {screen === "history" && <HistoryScreen />}
-          {screen === "settings" && <SettingsScreen />}
+        <div style={{ marginRight: 80 }}>
+          <div style={{ maxWidth: 1100, width: "100%", margin: "0 auto", padding: "40px 40px 100px" }}>
+            {screen === "upload" && <UploadScreen />}
+            {screen === "dashboard" && <DashboardScreen />}
+            {screen === "results" && <ResultsScreen />}
+            {screen === "reports" && <ReportsScreen />}
+            {screen === "history" && <HistoryScreen />}
+            {screen === "settings" && <SettingsScreen />}
+          </div>
         </div>
-      </div>
 
-      {modalAdv && (
-        <DetailModal adv={modalAdv.adv} type={modalAdv.type} T={T} onClose={() => setModalAdv(null)}
-          onRegen={() => regenOne(modalAdv.adv, modalAdv.type)} regenLoading={regenLoading === modalAdv.adv.name} />
-      )}
-      {toast && <Toast msg={toast.msg} type={toast.type} onDone={() => setToast(null)} T={T} />}
-    </div>
+        {modalAdv && (
+          <DetailModal adv={modalAdv.adv} type={modalAdv.type} onClose={() => setModalAdv(null)}
+            onRegen={() => regenOne(modalAdv.adv, modalAdv.type)} regenLoading={regenLoading === modalAdv.adv.name} />
+        )}
+        {toast && <Toast msg={toast.msg} type={toast.type} onDone={() => setToast(null)} />}
+      </div>
+    </ThemeCtx.Provider>
   );
 }
