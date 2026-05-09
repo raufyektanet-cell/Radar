@@ -1996,6 +1996,445 @@ export default function App() {
     );
   };
 
+  // ─ Trends screen ─────────────────────────────────────────────────────────────
+  const TrendsScreen = () => {
+    const D = useD();
+    const [view, setView] = useState<"heatmap" | "sparklines" | "winners">("heatmap");
+
+    if (!csvData) return (
+      <div style={{ textAlign: "center", padding: "5rem 2rem", display: "flex", flexDirection: "column", alignItems: "center", gap: 16 }}>
+        <RadarHero />
+        <p style={{ margin: 0, fontSize: 14, color: D.t3 }}>برای مشاهده روندها ابتدا فایل XLSX آپلود کنید</p>
+        <button onClick={() => setScreen("upload")} style={{ padding: "10px 24px", borderRadius: 12, border: "none", background: D.accent, color: "#fff", fontSize: 13, fontWeight: 600, cursor: "pointer" }}>رفتن به آپلود</button>
+      </div>
+    );
+
+    // Compute per-advertiser per-day yktShare
+    const rows = csvData.rows;
+    const dates = [...new Set(rows.map(r => r.Date || r.date).filter(Boolean))].sort().slice(-7);
+    const advDayMap = new Map<string, { name: string; days: Map<string, { ykt: number; total: number }> }>();
+    rows.forEach(r => {
+      const id = (r.Owner_id || r.Advertiser_name || "").trim();
+      const d = r.Date || r.date || "";
+      if (!id || !d) return;
+      if (!advDayMap.has(id)) advDayMap.set(id, { name: r.Advertiser_name || id, days: new Map() });
+      const adv = advDayMap.get(id)!;
+      const cur = adv.days.get(d) || { ykt: 0, total: 0 };
+      cur.ykt += Number(r.Yektanet) || 0;
+      cur.total += Number(r.Total_sessions) || 0;
+      adv.days.set(d, cur);
+    });
+
+    // Build trend array per advertiser (% ykt per day)
+    const advTrends = [...advDayMap.values()].map(a => {
+      const trend = dates.map(d => {
+        const day = a.days.get(d);
+        return day && day.total > 0 ? Math.round(day.ykt / day.total * 100) : 0;
+      });
+      const totalYkt = [...a.days.values()].reduce((s, x) => s + x.ykt, 0);
+      const totalSessions = [...a.days.values()].reduce((s, x) => s + x.total, 0);
+      const yktShare = totalSessions > 0 ? Math.round(totalYkt / totalSessions * 100) : 0;
+      return { name: a.name, trend, yktShare };
+    }).filter(a => a.yktShare > 0).sort((a, b) => b.yktShare - a.yktShare).slice(0, 20);
+
+    return (
+      <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+          <div>
+            <div style={{ fontSize: 18, fontWeight: 800, color: D.t1, letterSpacing: "-.3px" }}>تحلیل روند</div>
+            <div style={{ fontSize: 11, color: D.t3, fontFamily: D.mono, marginTop: 2 }}>روند سهم یکتانت {dates.length} روز اخیر</div>
+          </div>
+          <div style={{ display: "flex", gap: 6 }}>
+            <Pill label="هیت‌مپ" active={view === "heatmap"} onClick={() => setView("heatmap")} />
+            <Pill label="اسپارک‌لاین" active={view === "sparklines"} onClick={() => setView("sparklines")} />
+            <Pill label="برنده/بازنده" active={view === "winners"} onClick={() => setView("winners")} />
+          </div>
+        </div>
+
+        {view === "heatmap" && (
+          <div style={{ background: D.card, border: `1px solid ${D.border}`, borderRadius: 16, padding: "16px 20px", overflowX: "auto" }}>
+            <div style={{ display: "grid", gridTemplateColumns: `160px repeat(${dates.length}, 1fr) 60px`, gap: 4, marginBottom: 8 }}>
+              <div style={{ fontSize: 10, color: D.t3, fontFamily: D.mono }}>تبلیغ‌کننده</div>
+              {dates.map(d => <div key={d} style={{ fontSize: 10, color: D.t3, fontFamily: D.mono, textAlign: "center" }}>{d.slice(5)}</div>)}
+              <div style={{ fontSize: 10, color: D.t3, fontFamily: D.mono, textAlign: "center" }}>امروز</div>
+            </div>
+            {advTrends.map((a, i) => (
+              <div key={a.name} className="fu" style={{ display: "grid", gridTemplateColumns: `160px repeat(${dates.length}, 1fr) 60px`, gap: 4, marginBottom: 3, animationDelay: `${i * 20}ms` }}>
+                <div style={{ fontSize: 10.5, fontFamily: D.mono, color: D.t2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", paddingTop: 4 }}>{a.name}</div>
+                {a.trend.map((v, j) => {
+                  const intensity = v / 100;
+                  const bg = v >= 60 ? `rgba(29,184,126,${intensity * .8})` : v >= 40 ? `rgba(212,98,58,${intensity * .8})` : `rgba(224,82,82,${(1 - intensity) * .8})`;
+                  return (
+                    <div key={j} style={{ height: 22, borderRadius: 4, background: bg, display: "flex", alignItems: "center", justifyContent: "center" }}>
+                      {v > 0 && <span style={{ fontSize: 9, fontFamily: D.mono, color: "rgba(255,255,255,.9)", fontWeight: 600 }}>{v}</span>}
+                    </div>
+                  );
+                })}
+                <div style={{ height: 22, borderRadius: 4, background: D.border, display: "flex", alignItems: "center", justifyContent: "center" }}>
+                  <span style={{ fontSize: 10, fontFamily: D.mono, color: D.t1, fontWeight: 700 }}>{a.yktShare}٪</span>
+                </div>
+              </div>
+            ))}
+            <div style={{ display: "flex", gap: 4, marginTop: 12, alignItems: "center" }}>
+              <span style={{ fontSize: 10, color: D.t3, marginLeft: 6 }}>کم</span>
+              {[0, 20, 40, 60, 80, 100].map(v => (
+                <div key={v} style={{ width: 24, height: 12, borderRadius: 3, background: v >= 60 ? `rgba(29,184,126,${v / 100 * .8})` : v >= 40 ? `rgba(212,98,58,${v / 100 * .8})` : `rgba(224,82,82,${(1 - v / 100) * .8})` }} />
+              ))}
+              <span style={{ fontSize: 10, color: D.t3, marginRight: 6 }}>زیاد</span>
+            </div>
+          </div>
+        )}
+
+        {view === "sparklines" && (
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 12 }}>
+            {advTrends.map((a, i) => (
+              <div key={a.name} className="fu" style={{ animationDelay: `${i * 30}ms`, background: D.card, border: `1px solid ${D.border}`, borderRadius: 12, padding: "14px 16px" }}>
+                <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: 8 }}>
+                  <div style={{ fontSize: 11.5, fontFamily: D.mono, fontWeight: 600, color: D.t1, overflow: "hidden", textOverflow: "ellipsis", maxWidth: "70%" }}>{a.name}</div>
+                  <div style={{ fontSize: 18, fontWeight: 800, color: a.yktShare >= 60 ? D.green : a.yktShare >= 40 ? D.accent : D.red, fontFamily: D.mono, lineHeight: 1 }}>{a.yktShare}٪</div>
+                </div>
+                <Sparkline data={a.trend} color={D.accent} w={180} h={32} filled />
+                {a.trend.length > 1 && (
+                  <div style={{ display: "flex", justifyContent: "space-between", marginTop: 4 }}>
+                    <span style={{ fontSize: 9, color: D.t3, fontFamily: D.mono }}>{a.trend[0]}٪</span>
+                    <span style={{ fontSize: 9, color: a.trend[a.trend.length - 1] >= a.trend[0] ? D.green : D.red, fontFamily: D.mono }}>
+                      {a.trend[a.trend.length - 1] >= a.trend[0] ? "▲" : "▼"}{Math.abs(a.trend[a.trend.length - 1] - a.trend[0])}٪
+                    </span>
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+
+        {view === "winners" && (
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+            <div style={{ background: D.card, border: `1px solid ${D.greenBrd}`, borderRadius: 16, padding: "18px 20px" }}>
+              <div style={{ fontSize: 14, fontWeight: 700, color: D.green, marginBottom: 14 }}>▲ برنده‌های هفته</div>
+              {[...advTrends].filter(a => a.trend.length > 1).sort((a, b) => (b.trend[b.trend.length - 1] - b.trend[0]) - (a.trend[a.trend.length - 1] - a.trend[0])).slice(0, 8).map((a, i) => (
+                <div key={a.name} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 0", borderBottom: i < 7 ? `1px solid ${D.border}` : "none" }}>
+                  <Sparkline data={a.trend} color={D.green} w={60} h={20} />
+                  <div style={{ flex: 1, minWidth: 0, fontSize: 11, fontFamily: D.mono, color: D.t1, overflow: "hidden", textOverflow: "ellipsis" }}>{a.name}</div>
+                  <span style={{ fontSize: 12, fontFamily: D.mono, color: D.green, fontWeight: 700 }}>+{Math.max(0, a.trend[a.trend.length - 1] - a.trend[0])}٪</span>
+                </div>
+              ))}
+            </div>
+            <div style={{ background: D.card, border: `1px solid ${D.redBrd}`, borderRadius: 16, padding: "18px 20px" }}>
+              <div style={{ fontSize: 14, fontWeight: 700, color: D.red, marginBottom: 14 }}>▼ بازنده‌های هفته</div>
+              {[...advTrends].filter(a => a.trend.length > 1).sort((a, b) => (a.trend[a.trend.length - 1] - a.trend[0]) - (b.trend[b.trend.length - 1] - b.trend[0])).slice(0, 8).map((a, i) => (
+                <div key={a.name} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 0", borderBottom: i < 7 ? `1px solid ${D.border}` : "none" }}>
+                  <Sparkline data={a.trend} color={D.red} w={60} h={20} />
+                  <div style={{ flex: 1, minWidth: 0, fontSize: 11, fontFamily: D.mono, color: D.t1, overflow: "hidden", textOverflow: "ellipsis" }}>{a.name}</div>
+                  <span style={{ fontSize: 12, fontFamily: D.mono, color: D.red, fontWeight: 700 }}>{Math.min(0, a.trend[a.trend.length - 1] - a.trend[0])}٪</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  // ─ Leads screen ───────────────────────────────────────────────────────────────
+  const LeadsScreen = () => {
+    const D = useD();
+    const [filter, setFilter] = useState("all");
+    const [sortBy2, setSortBy2] = useState("sessions");
+
+    // Leads from result (AI-identified) or csvData (zero ykt)
+    const rawLeads = useMemo(() => {
+      const csvLeads: { name: string; id: string; cat1: string; am: string; sessions: number; score: number; priority: "high" | "medium" | "low" }[] = [];
+      if (csvData) {
+        const advSet2 = new Map<string, { name: string; id: string; cat1: string; am: string; sessions: number; ykt: number }>();
+        csvData.rows.forEach(r => {
+          const id = (r.Owner_id || r.Advertiser_name || "").trim();
+          if (!id) return;
+          const cur = advSet2.get(id) || { name: r.Advertiser_name || id, id, cat1: r.Category_level_1 || "", am: r.Account_manager_name || "", sessions: 0, ykt: 0 };
+          cur.sessions += Number(r.Total_sessions) || 0;
+          cur.ykt += Number(r.Yektanet) || 0;
+          advSet2.set(id, cur);
+        });
+        [...advSet2.values()].filter(a => a.ykt === 0 && a.sessions > 1000).forEach(a => {
+          const priority: "high" | "medium" | "low" = a.sessions > 50000 ? "high" : a.sessions > 10000 ? "medium" : "low";
+          csvLeads.push({ ...a, score: Math.min(99, Math.round(Math.log10(a.sessions) * 20)), priority });
+        });
+      }
+      return csvLeads;
+    }, [csvData]);
+
+    const filtered = filter === "all" ? rawLeads : rawLeads.filter(l => l.priority === filter);
+    const sorted = [...filtered].sort((a, b) => sortBy2 === "score" ? b.score - a.score : b.sessions - a.sessions);
+
+    if (!csvData) return (
+      <div style={{ textAlign: "center", padding: "5rem 2rem", display: "flex", flexDirection: "column", alignItems: "center", gap: 16 }}>
+        <RadarHero />
+        <p style={{ margin: 0, fontSize: 14, color: D.t3 }}>ابتدا فایل XLSX آپلود کنید</p>
+        <button onClick={() => setScreen("upload")} style={{ padding: "10px 24px", borderRadius: 12, border: "none", background: D.accent, color: "#fff", fontSize: 13, fontWeight: 600, cursor: "pointer" }}>رفتن به آپلود</button>
+      </div>
+    );
+
+    const counts = { high: rawLeads.filter(l => l.priority === "high").length, medium: rawLeads.filter(l => l.priority === "medium").length, low: rawLeads.filter(l => l.priority === "low").length };
+
+    return (
+      <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontSize: 18, fontWeight: 800, color: D.t1, letterSpacing: "-.3px" }}>لید پایپلاین</div>
+            <div style={{ fontSize: 11, color: D.t3, fontFamily: D.mono, marginTop: 2 }}>تبلیغ‌کننده‌هایی که یکتانت در آن‌ها حضور ندارد</div>
+          </div>
+          <div style={{ display: "flex", gap: 8 }}>
+            {([["high", "اولویت بالا", D.red], ["medium", "اولویت متوسط", D.amber], ["low", "اولویت پایین", D.t3]] as [string, string, string][]).map(([k, l, c]) => (
+              <div key={k} style={{ padding: "8px 14px", borderRadius: 10, background: filter === k ? c + "22" : D.card, border: `1px solid ${filter === k ? c + "44" : D.border}`, cursor: "pointer", transition: "all .14s" }} onClick={() => setFilter(filter === k ? "all" : k)}>
+                <div style={{ fontSize: 16, fontWeight: 800, color: c, fontFamily: D.mono, lineHeight: 1 }}>{counts[k as "high" | "medium" | "low"]}</div>
+                <div style={{ fontSize: 9.5, color: D.t3, marginTop: 2 }}>{l}</div>
+              </div>
+            ))}
+          </div>
+          <select value={sortBy2} onChange={e => setSortBy2(e.target.value)} style={{ padding: "5px 10px", borderRadius: 8, border: `1px solid ${D.border2}`, background: D.card, color: D.t2, fontSize: 11, fontFamily: "Vazirmatn,sans-serif", cursor: "pointer", outline: "none" }}>
+            <option value="score">امتیاز</option>
+            <option value="sessions">سشن</option>
+          </select>
+        </div>
+
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+          <Pill label="همه" active={filter === "all"} onClick={() => setFilter("all")} />
+          <Pill label="اولویت بالا" active={filter === "high"} onClick={() => setFilter("high")} />
+          <Pill label="اولویت متوسط" active={filter === "medium"} onClick={() => setFilter("medium")} />
+        </div>
+
+        {sorted.length === 0 ? (
+          <div style={{ textAlign: "center", padding: "4rem", color: D.t3, fontSize: 13 }}>لیدی با این فیلتر یافت نشد</div>
+        ) : sorted.map((a, i) => (
+          <div key={a.name} className="fu" style={{ animationDelay: `${i * 30}ms`, background: D.card, border: `1px solid ${D.border}`, borderRadius: 13, padding: "14px 16px" }}>
+            <div style={{ display: "flex", alignItems: "flex-start", gap: 12 }}>
+              <div style={{ width: 46, height: 46, borderRadius: 12, background: a.priority === "high" ? D.redDim : a.priority === "medium" ? D.amberDim : D.border, border: `1px solid ${a.priority === "high" ? D.redBrd : a.priority === "medium" ? D.amberBrd : D.border}`, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                <div style={{ textAlign: "center" }}>
+                  <div style={{ fontSize: 14, fontWeight: 800, color: a.priority === "high" ? D.red : a.priority === "medium" ? D.amber : D.t3, fontFamily: D.mono, lineHeight: 1 }}>{a.score}</div>
+                  <div style={{ fontSize: 8, color: D.t3 }}>امتیاز</div>
+                </div>
+              </div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 6, flexWrap: "wrap" }}>
+                  <span style={{ fontSize: 13, fontWeight: 700, color: D.t1, fontFamily: D.mono }}>{a.name}</span>
+                  <span style={{ fontSize: 9.5, color: D.t3, fontFamily: D.mono }}>#{a.id}</span>
+                  {a.cat1 && <span style={{ fontSize: 9.5, color: D.blue, background: D.blueDim, padding: "1px 6px", borderRadius: 20 }}>{a.cat1}</span>}
+                  <Badge label={a.priority === "high" ? "اولویت بالا" : a.priority === "medium" ? "اولویت متوسط" : "اولویت پایین"} color={a.priority === "high" ? D.red : a.priority === "medium" ? D.amber : D.t3} />
+                </div>
+                <div style={{ height: 4, borderRadius: 2, background: D.redDim, overflow: "hidden" }}>
+                  <div style={{ width: "100%", height: "100%", background: D.red, borderRadius: 2, opacity: .3 }} />
+                </div>
+                <div style={{ fontSize: 10, color: D.t3, marginTop: 4 }}>هیچ سشنی از یکتانت ثبت نشده</div>
+              </div>
+              <div style={{ textAlign: "center", flexShrink: 0, minWidth: 80 }}>
+                <div style={{ fontSize: 16, fontWeight: 800, color: D.t1, fontFamily: D.mono }}>{formatNumber(a.sessions)}</div>
+                <div style={{ fontSize: 9.5, color: D.t3 }}>سشن</div>
+                {a.am && <div style={{ fontSize: 10, color: D.accent, marginTop: 4, background: D.accentDim, borderRadius: 20, padding: "2px 8px" }}>{a.am.split(" ").slice(0, 2).join(" ")}</div>}
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+    );
+  };
+
+  // ─ Industry screen ────────────────────────────────────────────────────────────
+  const IndustryScreen = () => {
+    const D = useD();
+    const [selInd, setSelInd] = useState<string | null>(null);
+
+    if (!csvData) return (
+      <div style={{ textAlign: "center", padding: "5rem 2rem", display: "flex", flexDirection: "column", alignItems: "center", gap: 16 }}>
+        <RadarHero />
+        <p style={{ margin: 0, fontSize: 14, color: D.t3 }}>ابتدا فایل XLSX آپلود کنید</p>
+        <button onClick={() => setScreen("upload")} style={{ padding: "10px 24px", borderRadius: 12, border: "none", background: D.accent, color: "#fff", fontSize: 13, fontWeight: 600, cursor: "pointer" }}>رفتن به آپلود</button>
+      </div>
+    );
+
+    const rows = csvData.rows;
+    const indMap2 = new Map<string, { sessions: number; ykt: number; advertisers: number; names: string[] }>();
+    const advSeen = new Map<string, string>();
+    rows.forEach(r => {
+      const id = (r.Owner_id || r.Advertiser_name || "").trim();
+      if (!id) return;
+      const ind = r.Category_level_1 || "سایر";
+      if (!indMap2.has(ind)) indMap2.set(ind, { sessions: 0, ykt: 0, advertisers: 0, names: [] });
+      const cur = indMap2.get(ind)!;
+      cur.sessions += Number(r.Total_sessions) || 0;
+      cur.ykt += Number(r.Yektanet) || 0;
+      if (!advSeen.has(id)) { advSeen.set(id, ind); cur.advertisers++; cur.names.push(r.Advertiser_name || id); }
+    });
+    const indData = [...indMap2.entries()].map(([name, d], idx) => ({
+      name, ...d,
+      yktShare: d.sessions > 0 ? Math.round(d.ykt / d.sessions * 100) : 0,
+      color: ["#D4623A","#3B82F6","#8B5CF6","#10B981","#F59E0B","#EF4444","#14B8A6","#6366F1"][idx % 8],
+      risk: (d.sessions > 0 ? Math.round(d.ykt / d.sessions * 100) : 0) < 35 ? "high" : (d.sessions > 0 ? Math.round(d.ykt / d.sessions * 100) : 0) < 55 ? "medium" : "low",
+    })).filter(i => i.name !== "سایر").sort((a, b) => b.sessions - a.sessions);
+
+    const totalInd = indData.reduce((s, i) => s + i.sessions, 0);
+    const highRisk = indData.filter(i => i.risk === "high").length;
+    const stable = indData.filter(i => i.risk === "low").length;
+    const avgShare = indData.length > 0 ? Math.round(indData.reduce((s, i) => s + i.yktShare, 0) / indData.length) : 0;
+
+    return (
+      <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+        <div style={{ fontSize: 18, fontWeight: 800, color: D.t1, letterSpacing: "-.3px" }}>تحلیل صنایع</div>
+
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 12 }}>
+          <KpiCard label="صنایع پر ریسک" value={highRisk} color={D.red} sub="سهم یکتانت زیر ۳۵٪" />
+          <KpiCard label="صنایع پایدار" value={stable} color={D.green} sub="سهم یکتانت بالای ۵۵٪" delay={40} />
+          <KpiCard label="میانگین سهم" value={`${avgShare}٪`} color={D.accent} sub="همه صنایع" delay={80} />
+        </div>
+
+        {/* Treemap-style block */}
+        <div style={{ background: D.card, border: `1px solid ${D.border}`, borderRadius: 16, padding: "20px" }}>
+          <div style={{ fontSize: 12, fontWeight: 700, color: D.t1, marginBottom: 14 }}>حجم سشن به تفکیک صنعت</div>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 3 }}>
+            {indData.map((ind, i) => {
+              const w = Math.max(8, totalInd > 0 ? Math.round(ind.sessions / totalInd * 100) : 0);
+              const isHov = selInd === ind.name;
+              return (
+                <div key={i} onClick={() => setSelInd(isHov ? null : ind.name)}
+                  style={{ flex: `0 0 ${w}%`, minWidth: 60, height: 80, borderRadius: 8, background: isHov ? ind.color : ind.color + "33", border: `2px solid ${isHov ? ind.color : ind.color + "55"}`, cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 3, transition: "all .15s", padding: "4px 6px" }}>
+                  <div style={{ fontSize: isHov ? 11 : 10, fontWeight: 700, color: isHov ? "#fff" : ind.color, textAlign: "center", lineHeight: 1.3 }}>{ind.name}</div>
+                  <div style={{ fontSize: 9.5, color: isHov ? "rgba(255,255,255,.8)" : D.t3, fontFamily: D.mono }}>{formatNumber(ind.sessions)}</div>
+                  <div style={{ fontSize: 9.5, fontWeight: 700, color: isHov ? "#fff" : ind.yktShare >= 60 ? D.green : ind.yktShare >= 40 ? D.accent : D.red, fontFamily: D.mono }}>{ind.yktShare}٪</div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Detail table */}
+        <div style={{ background: D.card, border: `1px solid ${D.border}`, borderRadius: 16, overflow: "hidden" }}>
+          <div style={{ padding: "14px 20px", borderBottom: `1px solid ${D.border}`, display: "grid", gridTemplateColumns: "1fr 80px 100px 80px 100px", gap: 12 }}>
+            {["صنعت", "تبلیغ‌کننده", "مجموع سشن", "سهم یکتانت", "ریسک"].map(h => (
+              <div key={h} style={{ fontSize: 10, fontWeight: 700, color: D.t3, textTransform: "uppercase", letterSpacing: ".06em" }}>{h}</div>
+            ))}
+          </div>
+          {indData.map((ind, i) => (
+            <div key={i} onClick={() => setSelInd(selInd === ind.name ? null : ind.name)}
+              style={{ padding: "12px 20px", borderBottom: i < indData.length - 1 ? `1px solid ${D.border}` : "none", display: "grid", gridTemplateColumns: "1fr 80px 100px 80px 100px", gap: 12, alignItems: "center", cursor: "pointer", background: selInd === ind.name ? D.cardHov : "transparent", transition: "background .14s" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <div style={{ width: 10, height: 10, borderRadius: "50%", background: ind.color, flexShrink: 0 }} />
+                <span style={{ fontSize: 12, color: D.t1 }}>{ind.name}</span>
+              </div>
+              <div style={{ fontSize: 11, fontFamily: D.mono, color: D.t2 }}>{ind.advertisers}</div>
+              <div style={{ fontSize: 11, fontFamily: D.mono, color: D.t2 }}>{formatNumber(ind.sessions)}</div>
+              <div style={{ fontSize: 12, fontWeight: 700, fontFamily: D.mono, color: ind.yktShare >= 60 ? D.green : ind.yktShare >= 40 ? D.accent : D.red }}>{ind.yktShare}٪</div>
+              <Badge label={ind.risk === "high" ? "پر ریسک" : ind.risk === "medium" ? "متوسط" : "ایمن"} color={ind.risk === "high" ? D.red : ind.risk === "medium" ? D.amber : D.green} />
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  };
+
+  // ─ Team screen ────────────────────────────────────────────────────────────────
+  const TeamScreen = () => {
+    const D = useD();
+    const [selTeam, setSelTeam] = useState<string | null>(null);
+
+    if (!csvData) return (
+      <div style={{ textAlign: "center", padding: "5rem 2rem", display: "flex", flexDirection: "column", alignItems: "center", gap: 16 }}>
+        <RadarHero />
+        <p style={{ margin: 0, fontSize: 14, color: D.t3 }}>ابتدا فایل XLSX آپلود کنید</p>
+        <button onClick={() => setScreen("upload")} style={{ padding: "10px 24px", borderRadius: 12, border: "none", background: D.accent, color: "#fff", fontSize: 13, fontWeight: 600, cursor: "pointer" }}>رفتن به آپلود</button>
+      </div>
+    );
+
+    const rows = csvData.rows;
+    const teamMap2 = new Map<string, { sessions: number; ykt: number; advertisers: Set<string>; spend: number; members: Set<string> }>();
+    rows.forEach(r => {
+      const team = r.Team || ""; if (!team) return;
+      const id = (r.Owner_id || r.Advertiser_name || "").trim();
+      const cur = teamMap2.get(team) || { sessions: 0, ykt: 0, advertisers: new Set(), spend: 0, members: new Set() };
+      cur.sessions += Number(r.Total_sessions) || 0;
+      cur.ykt += Number(r.Yektanet) || 0;
+      cur.spend += Number(r.Daily_spend) || 0;
+      if (id) cur.advertisers.add(id);
+      if (r.Account_manager_name) cur.members.add(r.Account_manager_name);
+      teamMap2.set(team, cur);
+    });
+    const teamColors = [D.accent, D.blue, D.green, D.amber, D.t2];
+    const teamsData = [...teamMap2.entries()].map(([name, d], idx) => ({
+      name, sessions: d.sessions, ykt: d.ykt, spend: d.spend,
+      advertisers: d.advertisers.size, members: [...d.members],
+      avgYkt: d.sessions > 0 ? Math.round(d.ykt / d.sessions * 100) : 0,
+      color: teamColors[idx % teamColors.length],
+    })).sort((a, b) => b.advertisers - a.advertisers);
+
+    const maxAdv2 = Math.max(...teamsData.map(t => t.advertisers), 1);
+    const sel2 = teamsData.find(t => t.name === selTeam) || teamsData[0];
+
+    // Advertisers for selected team
+    const selTeamAdvs = sel2 ? [...new Map(rows.filter(r => r.Team === sel2.name).map(r => {
+      const id = (r.Owner_id || r.Advertiser_name || "").trim();
+      return [id, { name: r.Advertiser_name || id, cat1: r.Category_level_1 || "" }];
+    })).values()].slice(0, 10) : [];
+
+    if (teamsData.length === 0) return <div style={{ textAlign: "center", padding: "4rem", color: D.t3, fontSize: 13 }}>داده تیم در فایل یافت نشد</div>;
+
+    return (
+      <div style={{ display: "flex", gap: 16, minHeight: 500 }}>
+        {/* Team list sidebar */}
+        <div style={{ width: 210, flexShrink: 0, background: D.card, border: `1px solid ${D.border}`, borderRadius: 16, padding: "14px 10px", overflowY: "auto" }}>
+          <div style={{ fontSize: 10, color: D.t3, textTransform: "uppercase", letterSpacing: ".08em", fontWeight: 600, marginBottom: 12, padding: "0 4px" }}>تیم‌ها</div>
+          {teamsData.map((t, i) => (
+            <button key={t.name} onClick={() => setSelTeam(t.name)}
+              style={{ width: "100%", padding: "10px 12px", borderRadius: 10, border: `1px solid ${sel2?.name === t.name ? t.color + "44" : D.border}`, background: sel2?.name === t.name ? t.color + "11" : "transparent", cursor: "pointer", marginBottom: 6, transition: "all .14s", textAlign: "right", fontFamily: "Vazirmatn,sans-serif" }}>
+              <div style={{ fontSize: 13, fontWeight: 600, color: sel2?.name === t.name ? t.color : D.t1, marginBottom: 4 }}>{t.name}</div>
+              <div style={{ fontSize: 10, color: D.t3, fontFamily: D.mono }}>{t.advertisers} تبلیغ‌کننده · {t.avgYkt}٪ یکتانت</div>
+              <div style={{ height: 3, borderRadius: 2, background: D.border, marginTop: 6, overflow: "hidden" }}>
+                <div style={{ width: `${Math.round(t.advertisers / maxAdv2 * 100)}%`, height: "100%", background: t.color, borderRadius: 2 }} />
+              </div>
+            </button>
+          ))}
+        </div>
+
+        {/* Team detail */}
+        {sel2 && (
+          <div className="fu" style={{ flex: 1, display: "flex", flexDirection: "column", gap: 14 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 16, background: D.card, border: `1px solid ${D.border}`, borderRadius: 16, padding: "20px" }}>
+              <div style={{ width: 52, height: 52, borderRadius: 14, background: D.accentDim, border: `1px solid ${D.accentBrd}`, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke={D.accent} strokeWidth="1.6"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/></svg>
+              </div>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontSize: 20, fontWeight: 800, color: D.t1, marginBottom: 8 }}>{sel2.name}</div>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                  {sel2.members.slice(0, 8).map((m, i) => (
+                    <span key={i} style={{ fontSize: 11, color: D.accent, background: D.accentDim, border: `1px solid ${D.accentBrd}`, padding: "2px 9px", borderRadius: 20 }}>{m.split(" ").slice(0, 2).join(" ")}</span>
+                  ))}
+                </div>
+              </div>
+              <div style={{ textAlign: "center" }}>
+                <div style={{ fontSize: 48, fontWeight: 900, color: D.accent, fontFamily: D.mono, lineHeight: 1, letterSpacing: "-2px" }}>{sel2.avgYkt}٪</div>
+                <div style={{ fontSize: 10, color: D.t3 }}>میانگین سهم یکتانت</div>
+              </div>
+            </div>
+
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 14 }}>
+              <KpiCard label="تبلیغ‌کننده فعال" value={sel2.advertisers} color={D.blue} />
+              <KpiCard label="مجموع سشن" value={formatNumber(sel2.sessions)} color={D.accent} delay={40} />
+              <KpiCard label="درآمد تخمینی" value={fmtMoney(sel2.spend)} color={D.amber} delay={80} />
+            </div>
+
+            <div style={{ background: D.card, border: `1px solid ${D.border}`, borderRadius: 14, padding: "16px 20px" }}>
+              <SectionHeader title="تبلیغ‌کننده‌های این تیم" />
+              {selTeamAdvs.map((a, i) => (
+                <div key={a.name} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 0", borderBottom: i < selTeamAdvs.length - 1 ? `1px solid ${D.border}` : "none" }}>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 12, fontFamily: D.mono, color: D.t1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{a.name}</div>
+                    {a.cat1 && <div style={{ fontSize: 10, color: D.t3, marginTop: 1 }}>{a.cat1}</div>}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  };
+
   const tokens = useMemo(() => makeTokens(isDark), [isDark]);
 
   const topbarYktShare = useMemo<number | null>(() => {
@@ -2044,6 +2483,10 @@ export default function App() {
             {screen === "results" && <ResultsScreen />}
             {screen === "competitor" && <CompetitorScreen />}
             {screen === "marketmap" && <MarketMapScreen />}
+            {screen === "trends" && <TrendsScreen />}
+            {screen === "leads" && <LeadsScreen />}
+            {screen === "industry" && <IndustryScreen />}
+            {screen === "team" && <TeamScreen />}
             {screen === "reports" && <ReportsScreen />}
             {screen === "history" && <HistoryScreen />}
             {screen === "settings" && <SettingsScreen />}
