@@ -2435,6 +2435,351 @@ export default function App() {
     );
   };
 
+  // ─ Alerts screen ─────────────────────────────────────────────────────────────
+  const AlertsScreen = () => {
+    const D = useD();
+    const [filter, setFilter] = useState("all");
+
+    // Generate alerts from csvData
+    const generatedAlerts = useMemo(() => {
+      if (!csvData) return [];
+      const rows = csvData.rows;
+      const advSet3 = new Map<string, { name: string; sessions: number; ykt: number; am: string; cat1: string }>();
+      rows.forEach(r => {
+        const id = (r.Owner_id || r.Advertiser_name || "").trim();
+        if (!id) return;
+        const cur = advSet3.get(id) || { name: r.Advertiser_name || id, sessions: 0, ykt: 0, am: r.Account_manager_name || "", cat1: r.Category_level_1 || "" };
+        cur.sessions += Number(r.Total_sessions) || 0;
+        cur.ykt += Number(r.Yektanet) || 0;
+        advSet3.set(id, cur);
+      });
+      const alerts: { id: string; advertiser: string; msg: string; severity: "critical" | "high" | "medium" | "info"; type: "decline" | "lead" | "competitor" | "growth"; read: boolean; time: string }[] = [];
+      let idx = 0;
+      [...advSet3.values()].forEach(a => {
+        const yktPct = a.sessions > 0 ? Math.round(a.ykt / a.sessions * 100) : 0;
+        if (a.ykt === 0 && a.sessions > 5000) {
+          alerts.push({ id: String(idx++), advertiser: a.name, msg: `حجم سشن ${formatNumber(a.sessions)} — بدون حضور یکتانت. فرصت لید.`, severity: a.sessions > 30000 ? "critical" : "high", type: "lead", read: false, time: "امروز" });
+        } else if (yktPct < 25 && a.sessions > 10000) {
+          alerts.push({ id: String(idx++), advertiser: a.name, msg: `سهم یکتانت ${yktPct}٪ — بسیار پایین. رقبا در حال افزایش سهم.`, severity: "critical", type: "decline", read: false, time: "امروز" });
+        } else if (yktPct < 40 && a.sessions > 5000) {
+          alerts.push({ id: String(idx++), advertiser: a.name, msg: `سهم یکتانت ${yktPct}٪ — در خطر از دست دادن سهم بیشتر.`, severity: "high", type: "decline", read: false, time: "امروز" });
+        }
+      });
+      return alerts.sort((a, b) => (b.severity === "critical" ? 1 : 0) - (a.severity === "critical" ? 1 : 0)).slice(0, 30);
+    }, [csvData]);
+
+    const [localAlerts, setLocalAlerts] = useState(generatedAlerts);
+    const markRead = (id: string) => setLocalAlerts(as => as.map(a => a.id === id ? { ...a, read: true } : a));
+    const markAll = () => setLocalAlerts(as => as.map(a => ({ ...a, read: true })));
+    const filtered = filter === "all" ? localAlerts : filter === "unread" ? localAlerts.filter(a => !a.read) : localAlerts.filter(a => a.type === filter);
+
+    const severityColor: Record<string, string> = { critical: D.red, high: D.amber, medium: D.amber, info: D.blue };
+
+    if (!csvData) return (
+      <div style={{ textAlign: "center", padding: "5rem 2rem", display: "flex", flexDirection: "column", alignItems: "center", gap: 16 }}>
+        <RadarHero />
+        <p style={{ margin: 0, fontSize: 14, color: D.t3 }}>ابتدا فایل XLSX آپلود کنید تا هشدارها تولید شوند</p>
+        <button onClick={() => setScreen("upload")} style={{ padding: "10px 24px", borderRadius: 12, border: "none", background: D.accent, color: "#fff", fontSize: 13, fontWeight: 600, cursor: "pointer" }}>رفتن به آپلود</button>
+      </div>
+    );
+
+    return (
+      <div style={{ display: "flex", flexDirection: "column", gap: 0 }}>
+        <div style={{ paddingBottom: 14, borderBottom: `1px solid ${D.border}`, marginBottom: 14 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 12 }}>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontSize: 18, fontWeight: 800, color: D.t1, letterSpacing: "-.3px" }}>مرکز هشدار</div>
+              <div style={{ fontSize: 11, color: D.t3, fontFamily: D.mono, marginTop: 2 }}>{localAlerts.filter(a => !a.read).length} هشدار خوانده‌نشده</div>
+            </div>
+            <button onClick={markAll} style={{ fontSize: 11, color: D.accent, background: D.accentDim, border: `1px solid ${D.accentBrd}`, borderRadius: 99, padding: "5px 14px", cursor: "pointer", fontFamily: "Vazirmatn,sans-serif" }}>همه را خوانده علامت بزن</button>
+          </div>
+          <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+            {[["all", "همه"], ["unread", "خوانده‌نشده"], ["decline", "کاهش سهم"], ["lead", "لید"], ["competitor", "رقیب"]].map(([id, l]) => (
+              <Pill key={id} label={l} active={filter === id} onClick={() => setFilter(id)} />
+            ))}
+          </div>
+        </div>
+
+        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          {filtered.length === 0 ? (
+            <div style={{ textAlign: "center", padding: "4rem", color: D.t3, fontSize: 13 }}>هشداری با این فیلتر یافت نشد</div>
+          ) : filtered.map((al, i) => (
+            <div key={al.id} className="fu" style={{ animationDelay: `${i * 30}ms`, display: "flex", gap: 12, padding: "14px 16px", borderRadius: 12, transition: "all .14s", background: al.read ? D.card : D.surface, border: `1px solid ${al.read ? D.border : D.border2}`, opacity: al.read ? .75 : 1 }}>
+              <div style={{ width: 36, height: 36, borderRadius: 10, flexShrink: 0, background: severityColor[al.severity] + "22", border: `1px solid ${severityColor[al.severity]}44`, display: "flex", alignItems: "center", justifyContent: "center", color: severityColor[al.severity] }}>
+                {al.type === "decline" ? (
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 18 23 18 23 12"/></svg>
+                ) : (
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg>
+                )}
+              </div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4, flexWrap: "wrap" }}>
+                  <span style={{ fontSize: 12, fontWeight: 700, color: D.t1, fontFamily: D.mono }}>{al.advertiser}</span>
+                  <Badge label={al.severity === "critical" ? "بحرانی" : al.severity === "high" ? "بالا" : al.severity === "medium" ? "متوسط" : "اطلاع"} color={severityColor[al.severity]} />
+                  {!al.read && <div style={{ width: 6, height: 6, borderRadius: "50%", background: D.accent }} />}
+                </div>
+                <div style={{ fontSize: 12, color: D.t2, lineHeight: 1.7 }}>{al.msg}</div>
+                <div style={{ fontSize: 10, color: D.t3, fontFamily: D.mono, marginTop: 4 }}>{al.time}</div>
+              </div>
+              {!al.read && (
+                <button onClick={() => markRead(al.id)} style={{ padding: "5px 12px", borderRadius: 8, border: `1px solid ${D.border}`, background: "transparent", color: D.t3, fontSize: 10, cursor: "pointer", flexShrink: 0, fontFamily: "Vazirmatn,sans-serif", alignSelf: "center" }}>خواندم</button>
+              )}
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  };
+
+  // ─ Brief screen ───────────────────────────────────────────────────────────────
+  const BriefScreen = () => {
+    const D = useD();
+
+    // Compute from csvData
+    const rows = csvData?.rows || [];
+    const advSet4 = new Map<string, { name: string; sessions: number; ykt: number; cat1: string; am: string }>();
+    rows.forEach(r => {
+      const id = (r.Owner_id || r.Advertiser_name || "").trim();
+      if (!id) return;
+      const cur = advSet4.get(id) || { name: r.Advertiser_name || id, sessions: 0, ykt: 0, cat1: r.Category_level_1 || "", am: r.Account_manager_name || "" };
+      cur.sessions += Number(r.Total_sessions) || 0;
+      cur.ykt += Number(r.Yektanet) || 0;
+      advSet4.set(id, cur);
+    });
+    const advList4 = [...advSet4.values()].map(a => ({ ...a, yktShare: a.sessions > 0 ? Math.round(a.ykt / a.sessions * 100) : 0 }));
+    const totalSessions4 = advList4.reduce((s, a) => s + a.sessions, 0);
+    const totalYkt4 = advList4.reduce((s, a) => s + a.ykt, 0);
+    const yktShare4 = totalSessions4 > 0 ? Math.round(totalYkt4 / totalSessions4 * 100) : 0;
+    const declining4 = advList4.filter(a => a.yktShare > 0 && a.yktShare < 35).sort((a, b) => b.sessions - a.sessions).slice(0, 3);
+    const leads4 = advList4.filter(a => a.ykt === 0 && a.sessions > 2000).sort((a, b) => b.sessions - a.sessions).slice(0, 3);
+    const jalali = toJalali(new Date());
+
+    const COMP_COLS4 = ["Tapsell","Deema","Tavoos","Adexo","Chavosh","Aparat","Daart","Yellowadwise","Najva","Triboon","Jaryan","Telewebion","Adverge","Soroush","Soroush_ny","Bale_ny","Rubika_ny","Eitaa_ny","Bazaar","Myket"];
+    const TR_COMP4: Record<string, string> = { Tapsell:"تپسل",Deema:"دیما",Tavoos:"طاووس",Adexo:"ادکسو",Chavosh:"چاووش",Aparat:"آپارات",Daart:"دارت",Yellowadwise:"یلو ادوایز",Najva:"نجوا",Triboon:"تریبون",Jaryan:"جریان",Telewebion:"تلوبیون",Adverge:"ادورج",Soroush:"سروش",Soroush_ny:"سروش",Bale_ny:"بله",Rubika_ny:"روبیکا",Eitaa_ny:"ایتا",Bazaar:"بازار",Myket:"مایکت" };
+    const topComps = COMP_COLS4.map(col => ({
+      name: TR_COMP4[col] || col,
+      total: rows.reduce((s, r) => s + (Number(r[col]) || 0), 0),
+      color: AGENCY_COLORS[TR_COMP4[col] || col] || "#888",
+    })).filter(c => c.total > 0).sort((a, b) => b.total - a.total).slice(0, 4);
+
+    return (
+      <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+          <div>
+            <div style={{ fontSize: 18, fontWeight: 800, color: D.t1, letterSpacing: "-.3px" }}>خلاصه هفتگی</div>
+            <div style={{ fontSize: 11, color: D.t3, fontFamily: D.mono, marginTop: 2 }}>{jalali}</div>
+          </div>
+          <button onClick={() => { navigator.clipboard.writeText(editableMsg || ""); showToast("پیام کپی شد ✓"); }}
+            style={{ display: "flex", alignItems: "center", gap: 8, padding: "9px 18px", borderRadius: 10, border: "none", background: D.accent, color: "#fff", fontSize: 13, fontWeight: 600, cursor: "pointer", fontFamily: "Vazirmatn,sans-serif", boxShadow: `0 2px 12px ${D.accentGlow}` }}>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>
+            کپی پیام
+          </button>
+        </div>
+
+        {/* Summary header */}
+        <div style={{ background: `linear-gradient(135deg,${D.accentDim},${D.blueDim})`, border: `1px solid ${D.accentBrd}`, borderRadius: 18, padding: "24px 28px" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 14, marginBottom: 20 }}>
+            <div style={{ width: 44, height: 44, borderRadius: 14, background: D.accent, display: "flex", alignItems: "center", justifyContent: "center", boxShadow: `0 4px 16px ${D.accentGlow}` }}>
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="9" stroke="#fff" strokeWidth="1.6"/><circle cx="12" cy="12" r="5" stroke="#fff" strokeWidth="1.3" opacity=".55"/><circle cx="12" cy="12" r="1.8" fill="#fff"/><line x1="12" y1="3" x2="12" y2="12" stroke="#fff" strokeWidth="1.6"/></svg>
+            </div>
+            <div>
+              <div style={{ fontSize: 18, fontWeight: 800, color: D.t1 }}>خلاصه اجرایی Radar</div>
+              <div style={{ fontSize: 11, color: D.t3, fontFamily: D.mono }}>{jalali} — یکتانت</div>
+            </div>
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 12 }}>
+            {[
+              { l: "سهم بازار", v: `${yktShare4}٪`, dc: D.accent },
+              { l: "مجموع سشن", v: formatNumber(totalSessions4), dc: D.green },
+              { l: "تبلیغ‌کننده فعال", v: advList4.length, dc: D.blue },
+              { l: "لید جدید", v: leads4.length, dc: D.amber },
+            ].map((s, i) => (
+              <div key={i} style={{ padding: "12px 14px", borderRadius: 12, background: "rgba(0,0,0,.25)" }}>
+                <div style={{ fontSize: 9.5, color: D.t3, marginBottom: 4 }}>{s.l}</div>
+                <div style={{ fontSize: 22, fontWeight: 800, color: s.dc, fontFamily: D.mono, lineHeight: 1 }}>{s.v}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 14 }}>
+          {/* Declining */}
+          <div style={{ background: D.card, border: `1px solid ${D.border}`, borderRadius: 14, padding: "16px 18px" }}>
+            <div style={{ fontSize: 12, fontWeight: 700, color: D.red, marginBottom: 12 }}>▼ کاهش سهم یکتانت</div>
+            {declining4.length === 0 ? <div style={{ fontSize: 12, color: D.t3, textAlign: "center", padding: "16px 0" }}>موردی یافت نشد</div> : declining4.map((a, i) => (
+              <div key={i} style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 11, fontFamily: D.mono, color: D.t1, overflow: "hidden", textOverflow: "ellipsis" }}>{a.name}</div>
+                  <Sparkline data={[...Array(7)].map((_, j) => Math.max(0, a.yktShare + (j - 3) * 3))} color={D.red} w={100} h={20} />
+                </div>
+                <div style={{ fontSize: 14, fontWeight: 800, color: D.red, fontFamily: D.mono }}>{a.yktShare}٪</div>
+              </div>
+            ))}
+          </div>
+
+          {/* Competitors */}
+          <div style={{ background: D.card, border: `1px solid ${D.border}`, borderRadius: 14, padding: "16px 18px" }}>
+            <div style={{ fontSize: 12, fontWeight: 700, color: D.amber, marginBottom: 12 }}>⚡ رقبای فعال</div>
+            {topComps.map((c, i) => (
+              <div key={i} style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+                <div style={{ width: 8, height: 8, borderRadius: "50%", background: c.color, flexShrink: 0 }} />
+                <span style={{ fontSize: 12, color: D.t1, flex: 1 }}>{c.name}</span>
+                <span style={{ fontSize: 11, fontFamily: D.mono, color: D.t2 }}>{formatNumber(c.total)}</span>
+              </div>
+            ))}
+          </div>
+
+          {/* Top leads */}
+          <div style={{ background: D.card, border: `1px solid ${D.border}`, borderRadius: 14, padding: "16px 18px" }}>
+            <div style={{ fontSize: 12, fontWeight: 700, color: D.green, marginBottom: 12 }}>⭕ لیدهای اولویت‌دار</div>
+            {leads4.length === 0 ? <div style={{ fontSize: 12, color: D.t3, textAlign: "center", padding: "16px 0" }}>لیدی یافت نشد</div> : leads4.map((a, i) => (
+              <div key={i} style={{ padding: "9px 10px", borderRadius: 9, background: D.greenDim, border: `1px solid ${D.greenBrd}`, marginBottom: 7 }}>
+                <div style={{ fontSize: 11, fontFamily: D.mono, color: D.t1 }}>{a.name}</div>
+                <div style={{ fontSize: 10, color: D.t3, marginTop: 2 }}>{formatNumber(a.sessions)} سشن — {a.cat1 || "—"}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Market summary */}
+        {result?.market && (
+          <div style={{ background: D.card, border: `1px solid ${D.border}`, borderRadius: 14, padding: "16px 18px" }}>
+            <div style={{ fontSize: 12, fontWeight: 700, color: D.t1, marginBottom: 10 }}>تحلیل کلی بازار</div>
+            <p style={{ fontSize: 13, color: D.t2, lineHeight: 1.9, margin: 0 }}>{result.market}</p>
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  // ─ Explorer screen ────────────────────────────────────────────────────────────
+  const ExplorerScreen = () => {
+    const D = useD();
+    const [searchEx, setSearchEx] = useState("");
+    const [sortCol, setSortCol] = useState("sessions");
+    const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
+    const [page, setPage] = useState(0);
+    const PER = 15;
+
+    const allData = useMemo(() => {
+      if (!csvData) return [];
+      const advSet5 = new Map<string, { name: string; id: string; cat1: string; am: string; team: string; sessions: number; ykt: number; spend: number }>();
+      csvData.rows.forEach(r => {
+        const id = (r.Owner_id || r.Advertiser_name || "").trim();
+        if (!id) return;
+        const cur = advSet5.get(id) || { name: r.Advertiser_name || id, id, cat1: r.Category_level_1 || "", am: r.Account_manager_name || "", team: r.Team || "", sessions: 0, ykt: 0, spend: 0 };
+        cur.sessions += Number(r.Total_sessions) || 0;
+        cur.ykt += Number(r.Yektanet) || 0;
+        cur.spend += Number(r.Daily_spend) || 0;
+        advSet5.set(id, cur);
+      });
+      let items = [...advSet5.values()].map(a => ({ ...a, yktShare: a.sessions > 0 ? Math.round(a.ykt / a.sessions * 100) : 0 }));
+      if (searchEx) items = items.filter(a => a.name.toLowerCase().includes(searchEx.toLowerCase()) || a.id.includes(searchEx) || a.cat1.includes(searchEx) || a.am.includes(searchEx));
+      items.sort((a, b) => {
+        const av = sortCol === "ykt" ? a.yktShare : sortCol === "spend" ? a.spend : a.sessions;
+        const bv = sortCol === "ykt" ? b.yktShare : sortCol === "spend" ? b.spend : b.sessions;
+        return sortDir === "desc" ? bv - av : av - bv;
+      });
+      return items;
+    }, [csvData, searchEx, sortCol, sortDir]);
+
+    const pageData = allData.slice(page * PER, (page + 1) * PER);
+    const totalPages = Math.ceil(allData.length / PER);
+    const toggleSort = (k: string) => { if (sortCol === k) setSortDir(d => d === "desc" ? "asc" : "desc"); else { setSortCol(k); setSortDir("desc"); setPage(0); } };
+
+    const exportCsv = () => {
+      const header = "نام,شناسه,صنعت,اکانت منیجر,تیم,سشن,سهم یکتانت,هزینه";
+      const rows2 = allData.map(a => `${a.name},${a.id},${a.cat1},${a.am},${a.team},${a.sessions},${a.yktShare}%,${a.spend}`);
+      const blob = new Blob([header + "\n" + rows2.join("\n")], { type: "text/csv;charset=utf-8;" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url; link.download = "radar-export.csv"; link.click();
+      URL.revokeObjectURL(url);
+    };
+
+    if (!csvData) return (
+      <div style={{ textAlign: "center", padding: "5rem 2rem", display: "flex", flexDirection: "column", alignItems: "center", gap: 16 }}>
+        <RadarHero />
+        <p style={{ margin: 0, fontSize: 14, color: D.t3 }}>ابتدا فایل XLSX آپلود کنید</p>
+        <button onClick={() => setScreen("upload")} style={{ padding: "10px 24px", borderRadius: 12, border: "none", background: D.accent, color: "#fff", fontSize: 13, fontWeight: 600, cursor: "pointer" }}>رفتن به آپلود</button>
+      </div>
+    );
+
+    const cols = [
+      { key: "name", l: "تبلیغ‌کننده", w: "1fr" },
+      { key: "id", l: "ID", w: "70px" },
+      { key: "cat1", l: "صنعت", w: "130px" },
+      { key: "am", l: "اکانت منیجر", w: "120px" },
+      { key: "team", l: "تیم", w: "80px" },
+      { key: "sessions", l: "سشن", w: "80px", sort: true },
+      { key: "ykt", l: "یکتانت٪", w: "90px", sort: true },
+      { key: "spend", l: "هزینه", w: "80px", sort: true },
+    ];
+
+    return (
+      <div style={{ display: "flex", flexDirection: "column", gap: 0 }}>
+        <div style={{ paddingBottom: 14, borderBottom: `1px solid ${D.border}`, marginBottom: 0, display: "flex", alignItems: "center", gap: 12 }}>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontSize: 18, fontWeight: 800, color: D.t1 }}>اکسپلورر داده</div>
+            <div style={{ fontSize: 11, color: D.t3, fontFamily: D.mono, marginTop: 2 }}>{allData.length} تبلیغ‌کننده</div>
+          </div>
+          <input value={searchEx} onChange={e => { setSearchEx(e.target.value); setPage(0); }} placeholder="جستجو…"
+            style={{ padding: "6px 12px", borderRadius: 8, border: `1px solid ${D.border2}`, background: D.card, color: D.t1, fontSize: 12, fontFamily: "Vazirmatn,sans-serif", width: 200, outline: "none" }} />
+          <button onClick={exportCsv} style={{ display: "flex", alignItems: "center", gap: 6, padding: "7px 14px", borderRadius: 9, border: `1px solid ${D.accentBrd}`, background: D.accentDim, color: D.accent, fontSize: 12, cursor: "pointer", fontFamily: "Vazirmatn,sans-serif" }}>
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+            Export CSV
+          </button>
+        </div>
+
+        {/* Table header */}
+        <div style={{ padding: "0", borderBottom: `1px solid ${D.border2}`, display: "grid", gridTemplateColumns: cols.map(c => c.w).join(" "), gap: 8, alignItems: "center", height: 38, marginTop: 4 }}>
+          {cols.map(c => (
+            <div key={c.key} onClick={c.sort ? () => toggleSort(c.key) : undefined}
+              style={{ fontSize: 10, fontWeight: 700, color: c.sort && sortCol === c.key ? D.accent : D.t3, textTransform: "uppercase", letterSpacing: ".06em", cursor: c.sort ? "pointer" : "default", display: "flex", alignItems: "center", gap: 4, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+              {c.l}
+              {c.sort && sortCol === c.key && <span style={{ fontSize: 8 }}>{sortDir === "desc" ? "▼" : "▲"}</span>}
+            </div>
+          ))}
+        </div>
+
+        {/* Table body */}
+        <div style={{ display: "flex", flexDirection: "column" }}>
+          {pageData.map((a, i) => (
+            <div key={a.id} style={{ display: "grid", gridTemplateColumns: cols.map(c => c.w).join(" "), gap: 8, alignItems: "center", height: 40, borderBottom: `1px solid ${D.border}`, transition: "background .1s" }}
+              onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = D.cardHov}
+              onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = "transparent"}>
+              <div style={{ fontSize: 11, fontFamily: D.mono, color: D.t1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{a.name}</div>
+              <div style={{ fontSize: 10, fontFamily: D.mono, color: D.t3 }}>{a.id}</div>
+              <div style={{ fontSize: 10, color: D.t2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{a.cat1 || "—"}</div>
+              <div style={{ fontSize: 10, color: D.t2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{a.am.split(" ").slice(0, 2).join(" ")}</div>
+              <div style={{ fontSize: 10, fontFamily: D.mono, color: D.t3 }}>{a.team || "—"}</div>
+              <div style={{ fontSize: 11, fontFamily: D.mono, color: D.t2, fontWeight: 600 }}>{formatNumber(a.sessions)}</div>
+              <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                <div style={{ flex: 1, height: 3, borderRadius: 2, background: D.border, overflow: "hidden" }}>
+                  <div style={{ width: `${a.yktShare}%`, height: "100%", background: a.yktShare >= 60 ? D.green : a.yktShare >= 40 ? D.accent : D.red, borderRadius: 2 }} />
+                </div>
+                <span style={{ fontSize: 10, fontFamily: D.mono, color: a.yktShare >= 60 ? D.green : a.yktShare >= 40 ? D.accent : D.red, width: 28, textAlign: "left" }}>{a.yktShare}٪</span>
+              </div>
+              <div style={{ fontSize: 10, fontFamily: D.mono, color: D.amber }}>{fmtMoney(a.spend)}</div>
+            </div>
+          ))}
+        </div>
+
+        {/* Pagination */}
+        {totalPages > 1 && (
+          <div style={{ padding: "10px 0", borderTop: `1px solid ${D.border}`, display: "flex", alignItems: "center", gap: 8, marginTop: 4 }}>
+            <span style={{ fontSize: 11, color: D.t3, fontFamily: D.mono, flex: 1 }}>
+              {page * PER + 1}–{Math.min((page + 1) * PER, allData.length)} از {allData.length}
+            </span>
+            {Array.from({ length: Math.min(totalPages, 10) }, (_, i) => (
+              <button key={i} onClick={() => setPage(i)} style={{ width: 28, height: 28, borderRadius: 7, border: `1px solid ${page === i ? D.accentBrd : D.border}`, background: page === i ? D.accentDim : "transparent", color: page === i ? D.accent : D.t3, fontSize: 11, cursor: "pointer", fontFamily: D.mono, transition: "all .12s" }}>{i + 1}</button>
+            ))}
+          </div>
+        )}
+      </div>
+    );
+  };
+
   const tokens = useMemo(() => makeTokens(isDark), [isDark]);
 
   const topbarYktShare = useMemo<number | null>(() => {
@@ -2487,6 +2832,9 @@ export default function App() {
             {screen === "leads" && <LeadsScreen />}
             {screen === "industry" && <IndustryScreen />}
             {screen === "team" && <TeamScreen />}
+            {screen === "alerts" && <AlertsScreen />}
+            {screen === "brief" && <BriefScreen />}
+            {screen === "explorer" && <ExplorerScreen />}
             {screen === "reports" && <ReportsScreen />}
             {screen === "history" && <HistoryScreen />}
             {screen === "settings" && <SettingsScreen />}
