@@ -68,8 +68,8 @@ const TEMPLATES: Record<string, { label: string; desc: string }> = {
 
 const TEMPLATE_INSTRUCTIONS: Record<string, string> = {
   standard: "",
-  brief: "Be very concise — max 1 sentence per advertiser. Only the single most important change.",
-  detailed: "Be detailed — up to 4 sentences per advertiser. Include all agencies and full trend.",
+  brief: "Be very concise — max 1 sentence per advertiser. Only the single most important change. IMPORTANT: You MUST still use the exact ##ADVERTISER##/##LEAD##/##END## block format — do not skip it.",
+  detailed: "Be detailed — up to 4 sentences per advertiser. Include all agencies and full trend. IMPORTANT: You MUST still use the exact ##ADVERTISER##/##LEAD##/##END## block format for every entry.",
 };
 
 const SYSTEM_PROMPT = `You are a market intelligence analyst at Yektanet (یکتانت). You write a daily Persian briefing for sales managers.
@@ -677,8 +677,9 @@ function Sidebar({ screen, setScreen, isDark, setIsDark, hasResult, hasCsv, sess
   const D = useD();
   const enabled = (id: string) => {
     if (id === "upload") return true;
-    if (["results", "competitor", "leads", "alerts", "brief"].includes(id)) return hasResult;
-    if (["dashboard", "marketmap", "trends", "industry", "team", "explorer"].includes(id)) return hasCsv;
+    if (id === "results") return hasResult;
+    if (["dashboard", "marketmap", "trends", "industry", "team", "explorer",
+         "competitor", "leads", "alerts", "brief"].includes(id)) return hasCsv;
     return true;
   };
 
@@ -1004,7 +1005,7 @@ export default function App() {
   };
 
   const analyze = async () => {
-    setErrMsg(""); setRawDebug(""); setShowDebug(false); setStep("loading"); setScreen("upload");
+    setErrMsg(""); setRawDebug(""); setShowDebug(false); setStep("loading");
     startLoadingProgress();
     try {
       const filteredRows = filterRowsByManager(csvData!.rows);
@@ -2534,6 +2535,12 @@ export default function App() {
   // ─ Brief screen ───────────────────────────────────────────────────────────────
   const BriefScreen = () => {
     const D = useD();
+    if (!csvData) return (
+      <div style={{ textAlign: "center", padding: "5rem 2rem", color: D.t3 }}>
+        <p style={{ fontSize: 15, marginBottom: 16 }}>ابتدا فایل XLSX آپلود کنید</p>
+        <button onClick={() => setScreen("upload")} style={{ padding: "10px 24px", borderRadius: 10, border: "none", background: D.accent, color: "#fff", fontSize: 13, fontWeight: 600, cursor: "pointer", fontFamily: "Vazirmatn,sans-serif" }}>رفتن به آپلود</button>
+      </div>
+    );
 
     // Compute from csvData
     const rows = csvData?.rows || [];
@@ -2841,6 +2848,21 @@ export default function App() {
           </div>
         </div>
 
+        {step === "loading" && (
+          <div style={{ position: "fixed", inset: 0, zIndex: 9000, background: "rgba(0,0,0,0.55)", backdropFilter: "blur(4px)", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 24 }}>
+            <RadarHero />
+            <div style={{ width: 320 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
+                <span style={{ fontSize: 13, color: "#fff" }}>در حال آنالیز داده‌ها...</span>
+                <span style={{ fontSize: 13, color: tokens.accent, fontWeight: 600 }}>{Math.round(loadingProgress)}٪</span>
+              </div>
+              <div style={{ height: 4, background: "rgba(255,255,255,0.15)", borderRadius: 4, overflow: "hidden" }}>
+                <div style={{ height: "100%", background: tokens.accent, borderRadius: 4, width: `${loadingProgress}%`, transition: "width 0.4s ease" }} />
+              </div>
+            </div>
+            <p style={{ margin: 0, fontSize: 12, color: "rgba(255,255,255,0.6)" }}>Claude در حال بررسی رقابت بازار است</p>
+          </div>
+        )}
         {modalAdv && (
           <DetailModal adv={modalAdv.adv} type={modalAdv.type} onClose={() => setModalAdv(null)}
             onRegen={() => regenOne(modalAdv.adv, modalAdv.type)} regenLoading={regenLoading === modalAdv.adv.name} />
