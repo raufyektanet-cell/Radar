@@ -644,51 +644,140 @@ function LoginPage({ onLogin }: { onLogin: (u: SessionUser) => void }) {
   );
 }
 
-// ── Sidebar ───────────────────────────────────────────────────────────────────
+// ── Sidebar v2 ────────────────────────────────────────────────────────────────
 
-function Sidebar({ screen, setScreen, isDark, setIsDark, hasResult, hasCsv, session, onLogout, T }: {
-  screen: string; setScreen: (s: string) => void; isDark: boolean; setIsDark: (v: boolean) => void; hasResult: boolean; hasCsv: boolean; session: SessionUser; onLogout: () => void; T: Theme;
+const NAV_ITEMS = [
+  { id: "upload",    fa: "آنالیز جدید",   icon: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg> },
+  { id: "dashboard", fa: "داشبورد",        icon: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><rect x="3" y="3" width="7" height="9" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/><rect x="14" y="12" width="7" height="9" rx="1"/><rect x="3" y="16" width="7" height="5" rx="1"/></svg> },
+  { id: "results",   fa: "آنالیز",         icon: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg> },
+  { id: "competitor",fa: "رقبا",           icon: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg> },
+  { id: "marketmap", fa: "نقشه بازار",     icon: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="4"/><line x1="12" y1="2" x2="12" y2="8"/><line x1="12" y1="16" x2="12" y2="22"/><line x1="2" y1="12" x2="8" y2="12"/><line x1="16" y1="12" x2="22" y2="12"/></svg> },
+  { id: "trends",    fa: "روندها",         icon: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg> },
+  { id: "leads",     fa: "لیدها",          icon: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg> },
+  { id: "industry",  fa: "صنایع",          icon: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 7V5a2 2 0 00-2-2h-4a2 2 0 00-2 2v2"/></svg> },
+  { id: "team",      fa: "تیم",            icon: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/></svg> },
+  { id: "alerts",    fa: "هشدارها",        icon: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 01-3.46 0"/></svg> },
+  { id: "brief",     fa: "خلاصه هفتگی",   icon: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg> },
+  { id: "explorer",  fa: "دیتا",           icon: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="3" y1="15" x2="21" y2="15"/><line x1="9" y1="3" x2="9" y2="21"/></svg> },
+];
+
+const PAGE_NAMES: Record<string, string> = {
+  upload: "آنالیز جدید", dashboard: "داشبورد", results: "نتایج آنالیز",
+  competitor: "بررسی رقبا", marketmap: "نقشه بازار", trends: "تحلیل روند",
+  leads: "لید پایپلاین", profile: "پروفایل", industry: "تحلیل صنایع",
+  team: "عملکرد تیم", alerts: "مرکز هشدار", brief: "خلاصه هفتگی",
+  explorer: "اکسپلورر داده", reports: "گزارش‌ها", history: "تاریخچه", settings: "تنظیمات",
+};
+
+function Sidebar({ screen, setScreen, isDark, setIsDark, hasResult, hasCsv, session, onLogout, alertCount, T }: {
+  screen: string; setScreen: (s: string) => void; isDark: boolean; setIsDark: (v: boolean) => void;
+  hasResult: boolean; hasCsv: boolean; session: SessionUser; onLogout: () => void; alertCount: number; T: Theme;
 }) {
-  const items = [
-    { id: "upload", label: "آنالیز", icon: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4" /><polyline points="17 8 12 3 7 8" /><line x1="12" y1="3" x2="12" y2="15" /></svg> },
-    { id: "dashboard", label: "داشبورد", icon: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><rect x="3" y="3" width="7" height="9" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/><rect x="14" y="12" width="7" height="9" rx="1"/><rect x="3" y="16" width="7" height="5" rx="1"/></svg>, disabled: !hasCsv },
-    { id: "results", label: "نتایج", icon: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><rect x="3" y="3" width="7" height="7" rx="1" /><rect x="14" y="3" width="7" height="7" rx="1" /><rect x="3" y="14" width="7" height="7" rx="1" /><rect x="14" y="14" width="7" height="7" rx="1" /></svg>, disabled: !hasResult },
-    { id: "reports", label: "گزارش‌ها", icon: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" /><polyline points="14 2 14 8 20 8" /><line x1="16" y1="13" x2="8" y2="13" /><line x1="16" y1="17" x2="8" y2="17" /></svg> },
-    { id: "history", label: "تاریخچه", icon: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" /></svg> },
-    { id: "settings", label: "تنظیمات", icon: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z" /></svg> },
-  ];
+  const D = useD();
+  const enabled = (id: string) => {
+    if (id === "upload") return true;
+    if (["results", "competitor", "leads", "alerts", "brief"].includes(id)) return hasResult;
+    if (["dashboard", "marketmap", "trends", "industry", "team", "explorer"].includes(id)) return hasCsv;
+    return true;
+  };
+
   return (
-    <div style={{ position: "fixed", right: 0, top: 0, bottom: 0, width: 80, background: T.surface, borderLeft: `1px solid ${T.border}`, display: "flex", flexDirection: "column", alignItems: "center", paddingTop: 20, paddingBottom: 20, zIndex: 200, gap: 2 }}>
-      <div style={{ width: 38, height: 38, borderRadius: 11, background: T.coral, display: "flex", alignItems: "center", justifyContent: "center", marginBottom: 16, flexShrink: 0 }}>
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="10" stroke="#fff" strokeWidth="1.5" /><circle cx="12" cy="12" r="6" stroke="#fff" strokeWidth="1" opacity="0.6" /><circle cx="12" cy="12" r="2.5" fill="#fff" /></svg>
+    <div style={{ position: "fixed", right: 0, top: 0, bottom: 0, width: 200, background: D.surface, borderLeft: `1px solid ${D.border}`, display: "flex", flexDirection: "column", zIndex: 200, overflowY: "auto" }}>
+      {/* Logo */}
+      <div style={{ padding: "18px 16px 14px", borderBottom: `1px solid ${D.border}`, flexShrink: 0 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <div style={{ width: 34, height: 34, borderRadius: 10, background: `linear-gradient(135deg,${D.accent},${D.accentHov})`, display: "flex", alignItems: "center", justifyContent: "center", boxShadow: `0 4px 14px ${D.accentGlow}`, flexShrink: 0 }}>
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="9" stroke="#fff" strokeWidth="1.6"/><circle cx="12" cy="12" r="5" stroke="#fff" strokeWidth="1.3" opacity=".55"/><circle cx="12" cy="12" r="1.8" fill="#fff"/><line x1="12" y1="3" x2="12" y2="12" stroke="#fff" strokeWidth="1.6"/></svg>
+          </div>
+          <div>
+            <div style={{ fontSize: 15, fontWeight: 800, color: D.t1, letterSpacing: "-.3px" }}>Radar</div>
+            <div style={{ fontSize: 9.5, color: D.t3, fontFamily: D.mono }}>یکتانت · v2</div>
+          </div>
+        </div>
       </div>
-      {items.map(item => {
-        const active = screen === item.id;
-        return (
-          <button key={item.id} onClick={() => !item.disabled && setScreen(item.id)} title={item.label} aria-label={item.label} aria-current={active ? "page" : undefined}
-            style={{ width: 48, height: 48, borderRadius: 13, border: "none", cursor: item.disabled ? "default" : "pointer", background: active ? T.coralDim : "transparent", color: active ? T.coral : item.disabled ? T.text3 : T.text2, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 3, transition: "all 0.18s", opacity: item.disabled ? 0.4 : 1 }}>
-            {item.icon}
-            <span style={{ fontSize: 8.5, fontWeight: active ? 600 : 400, letterSpacing: "0.01em" }}>{item.label}</span>
+
+      {/* Nav */}
+      <nav style={{ flex: 1, padding: "8px" }}>
+        {NAV_ITEMS.map(item => {
+          const active = screen === item.id;
+          const on = enabled(item.id);
+          return (
+            <button key={item.id} onClick={() => on && setScreen(item.id)}
+              aria-label={item.fa} aria-current={active ? "page" : undefined}
+              style={{ display: "flex", alignItems: "center", gap: 9, width: "100%", padding: "8px 10px", borderRadius: 9, border: "none", cursor: on ? "pointer" : "default", marginBottom: 1,
+                background: active ? D.accentDim : "transparent",
+                color: active ? D.accent : on ? D.t2 : D.t4,
+                fontSize: 12, fontFamily: "Vazirmatn,sans-serif", fontWeight: active ? 600 : 400,
+                borderRight: active ? `2.5px solid ${D.accent}` : "2.5px solid transparent",
+                transition: "all .12s", position: "relative" }}>
+              <span style={{ flexShrink: 0, opacity: active ? 1 : on ? .7 : .35 }}>{item.icon}</span>
+              <span style={{ flex: 1, textAlign: "right" }}>{item.fa}</span>
+              {item.id === "alerts" && alertCount > 0 && (
+                <span style={{ fontSize: 9, fontWeight: 800, background: D.red, color: "#fff", borderRadius: 99, padding: "1px 5px", fontFamily: D.mono, minWidth: 16, textAlign: "center" }}>{alertCount}</span>
+              )}
+              {active && <div style={{ width: 5, height: 5, borderRadius: "50%", background: D.accent, flexShrink: 0 }} />}
+            </button>
+          );
+        })}
+      </nav>
+
+      {/* Bottom: user + controls */}
+      <div style={{ padding: "10px 12px 14px", borderTop: `1px solid ${D.border}`, flexShrink: 0 }}>
+        {/* User card */}
+        <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 10px", borderRadius: 9, background: D.accentDim, border: `1px solid ${D.accentBrd}`, marginBottom: 8 }}>
+          <div style={{ width: 26, height: 26, borderRadius: "50%", background: D.accent, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, fontWeight: 800, color: "#fff", flexShrink: 0 }}>
+            {session.managerFa.slice(0, 1)}
+          </div>
+          <div style={{ minWidth: 0 }}>
+            <div style={{ fontSize: 11, fontWeight: 600, color: D.t1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{session.managerFa}</div>
+            <div style={{ fontSize: 9.5, color: D.t3, fontFamily: D.mono, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{session.isAdmin ? "همه تیم‌ها" : session.teamFa}</div>
+          </div>
+        </div>
+        {/* Theme + Logout row */}
+        <div style={{ display: "flex", gap: 6 }}>
+          <button onClick={() => setIsDark(!isDark)} title={isDark ? "روشن" : "تاریک"} style={{ flex: 1, height: 32, borderRadius: 8, border: `1px solid ${D.border}`, background: "transparent", color: D.t3, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>
+            {isDark
+              ? <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/></svg>
+              : <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"/></svg>}
           </button>
-        );
-      })}
-      <div style={{ flex: 1 }} />
-      {/* User avatar */}
-      <div title={`${session.managerFa} — ${session.teamFa}`} aria-label={`کاربر: ${session.managerFa}`} role="img"
-        style={{ width: 44, height: 44, borderRadius: "50%", background: T.coralDim, border: `1.5px solid ${T.coralBorder}`, display: "flex", alignItems: "center", justifyContent: "center", color: T.coral, fontWeight: 700, fontSize: 14, marginBottom: 6, flexShrink: 0 }}>
-        {session.managerFa.slice(0, 1)}
+          <button onClick={onLogout} title="خروج" style={{ flex: 1, height: 32, borderRadius: 8, border: `1px solid ${D.redBrd}`, background: D.redDim, color: D.red, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+          </button>
+        </div>
       </div>
-      {/* Theme toggle */}
-      <button onClick={() => setIsDark(!isDark)} title={isDark ? "حالت روشن" : "حالت تاریک"} aria-label={isDark ? "تغییر به حالت روشن" : "تغییر به حالت تاریک"}
-        style={{ width: 44, height: 44, borderRadius: 10, border: `1px solid ${T.border}`, background: T.surface2, color: T.text2, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", transition: "all 0.18s", marginBottom: 6 }}>
-        {isDark
-          ? <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="5" /><line x1="12" y1="1" x2="12" y2="3" /><line x1="12" y1="21" x2="12" y2="23" /><line x1="4.22" y1="4.22" x2="5.64" y2="5.64" /><line x1="18.36" y1="18.36" x2="19.78" y2="19.78" /><line x1="1" y1="12" x2="3" y2="12" /><line x1="21" y1="12" x2="23" y2="12" /><line x1="4.22" y1="19.78" x2="5.64" y2="18.36" /><line x1="18.36" y1="5.64" x2="19.78" y2="4.22" /></svg>
-          : <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z" /></svg>}
-      </button>
-      {/* Logout */}
-      <button onClick={onLogout} title="خروج" aria-label="خروج از حساب"
-        style={{ width: 44, height: 44, borderRadius: 10, border: `1px solid ${T.dangerBorder}`, background: T.dangerBg, color: T.danger, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", transition: "all 0.18s" }}>
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+    </div>
+  );
+}
+
+// ── Topbar v2 ─────────────────────────────────────────────────────────────────
+
+function Topbar({ screen, yktShare, alertCount, setScreen }: { screen: string; yktShare: number | null; alertCount: number; setScreen: (s: string) => void }) {
+  const D = useD();
+  const jalali = toJalali(new Date());
+  const pageName = PAGE_NAMES[screen] || screen;
+  return (
+    <div style={{ position: "fixed", top: 0, right: 200, left: 0, height: 52, display: "flex", alignItems: "center", padding: "0 24px", background: D.surface, borderBottom: `1px solid ${D.border}`, zIndex: 100, gap: 14 }}>
+      {/* Breadcrumb */}
+      <div style={{ display: "flex", alignItems: "center", gap: 8, flex: 1, minWidth: 0 }}>
+        <span style={{ fontSize: 11, color: D.t3, fontFamily: D.mono }}>Radar</span>
+        <span style={{ fontSize: 11, color: D.t4 }}>›</span>
+        <span style={{ fontSize: 13, fontWeight: 700, color: D.t1 }}>{pageName}</span>
+      </div>
+      {/* Jalali date */}
+      <div style={{ fontSize: 11, color: D.t3, background: D.card, border: `1px solid ${D.border}`, borderRadius: 8, padding: "4px 10px", fontFamily: D.mono, flexShrink: 0 }}>
+        {jalali}
+      </div>
+      {/* Ykt market share pill */}
+      {yktShare !== null && (
+        <div style={{ display: "flex", alignItems: "center", gap: 6, background: D.accentDim, border: `1px solid ${D.accentBrd}`, borderRadius: 8, padding: "4px 10px", flexShrink: 0 }}>
+          <span style={{ fontSize: 10, color: D.t3 }}>سهم یکتانت</span>
+          <span style={{ fontSize: 13, fontWeight: 800, color: D.accent, fontFamily: D.mono }}>{yktShare}٪</span>
+        </div>
+      )}
+      {/* Alert bell */}
+      <button onClick={() => setScreen("alerts")} style={{ position: "relative", width: 36, height: 36, borderRadius: 9, border: `1px solid ${D.border}`, background: "transparent", color: D.t2, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 01-3.46 0"/></svg>
+        {alertCount > 0 && <span style={{ position: "absolute", top: 4, right: 4, width: 8, height: 8, borderRadius: "50%", background: D.red }} />}
       </button>
     </div>
   );
@@ -1729,6 +1818,23 @@ export default function App() {
 
   const tokens = useMemo(() => makeTokens(isDark), [isDark]);
 
+  const topbarYktShare = useMemo<number | null>(() => {
+    if (!csvData) return null;
+    const rows = csvData.rows;
+    const totalSessions = rows.reduce((s, r) => s + (Number(r.Total_sessions) || 0), 0);
+    const totalYkt = rows.reduce((s, r) => s + (Number(r.Yektanet) || 0), 0);
+    return totalSessions > 0 ? Math.round(totalYkt / totalSessions * 100) : null;
+  }, [csvData]);
+
+  const alertCount = useMemo(() => {
+    if (!result) return 0;
+    return result.advertisers.filter(a => {
+      const total = a.agencies.reduce((s, ag) => s + ag.value, 0);
+      const ykt = a.agencies.find(ag => ag.name === "یکتانت")?.value ?? 0;
+      return total > 0 && ykt / total < 0.35;
+    }).length;
+  }, [result]);
+
   if (!session) return (
     <ThemeCtx.Provider value={tokens}>
       <style>{GLOBAL_CSS}</style>
@@ -1748,10 +1854,11 @@ export default function App() {
           button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible { outline: 2px solid ${tokens.accent}; outline-offset: 2px; border-radius: 4px; }
         `}</style>
 
-        <Sidebar screen={screen} setScreen={setScreen} isDark={isDark} setIsDark={setIsDark} hasResult={!!result} hasCsv={!!csvData} session={session} onLogout={handleLogout} T={tokens} />
+        <Topbar screen={screen} yktShare={topbarYktShare} alertCount={alertCount} setScreen={setScreen} />
+        <Sidebar screen={screen} setScreen={setScreen} isDark={isDark} setIsDark={setIsDark} hasResult={!!result} hasCsv={!!csvData} session={session} onLogout={handleLogout} alertCount={alertCount} T={tokens} />
 
-        <div style={{ marginRight: 80 }}>
-          <div style={{ maxWidth: 1100, width: "100%", margin: "0 auto", padding: "40px 40px 100px" }}>
+        <div style={{ marginRight: 200 }}>
+          <div style={{ maxWidth: 1200, width: "100%", margin: "0 auto", padding: "92px 32px 80px" }}>
             {screen === "upload" && <UploadScreen />}
             {screen === "dashboard" && <DashboardScreen />}
             {screen === "results" && <ResultsScreen />}
