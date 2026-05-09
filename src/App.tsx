@@ -2830,7 +2830,7 @@ export default function App() {
 
   return (
     <ThemeCtx.Provider value={tokens}>
-      <div style={{ minHeight: "100dvh", background: tokens.bg, color: tokens.t1, direction: "rtl", fontFamily: "'Vazirmatn', system-ui, sans-serif", overflowX: "hidden" }}>
+      <div style={{ minHeight: "100dvh", background: tokens.bg, color: tokens.t1, direction: "rtl", fontFamily: "'Vazirmatn', system-ui, sans-serif" }}>
         <style>{GLOBAL_CSS}</style>
         <style>{`
           ::-webkit-scrollbar { width: 5px; height: 5px; }
