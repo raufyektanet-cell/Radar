@@ -130,6 +130,21 @@ function normalizeDate(val: unknown): string {
   const d = new Date(s); return isNaN(d.getTime()) ? "" : d.toISOString().slice(0, 10);
 }
 
+// Normalise rows from any file: capitalise first char of each key so both
+// lowercase ("total_sessions") and mixed-case ("Total_sessions") headers work.
+// Also strip thousands commas from pure-numeric strings ("7,841" → "7841").
+function normalizeRows(rows: Record<string, string>[]): Record<string, string>[] {
+  return rows.map(row => {
+    const out: Record<string, string> = {};
+    for (const [k, v] of Object.entries(row)) {
+      const key = k.charAt(0).toUpperCase() + k.slice(1);
+      const val = /^[\d,]+$/.test(String(v)) ? String(v).replace(/,/g, "") : String(v);
+      out[key] = val;
+    }
+    return out;
+  });
+}
+
 function readFile(file: File, onSuccess: (rows: Record<string, string>[], csvText: string) => void, onError: (err: unknown) => void) {
   const isXlsx = /\.(xlsx|xls)$/i.test(file.name);
   const reader = new FileReader();
@@ -138,7 +153,7 @@ function readFile(file: File, onSuccess: (rows: Record<string, string>[], csvTex
       if (isXlsx) {
         const wb = XLSX.read((e.target as FileReader).result, { type: "array", cellDates: true });
         const ws = wb.Sheets[wb.SheetNames[0]];
-        const rows = XLSX.utils.sheet_to_json(ws, { defval: "", raw: false }) as Record<string, string>[];
+        const rows = normalizeRows(XLSX.utils.sheet_to_json(ws, { defval: "", raw: false }) as Record<string, string>[]);
         onSuccess(rows, XLSX.utils.sheet_to_csv(ws));
       } else {
         const text = (e.target as FileReader).result as string;
@@ -150,7 +165,7 @@ function readFile(file: File, onSuccess: (rows: Record<string, string>[], csvTex
           vals.push(cur.trim());
           const obj: Record<string, string> = {}; headers.forEach((h, i) => { obj[h] = (vals[i] || "").replace(/^"|"$/g, "").trim(); }); return obj;
         }).filter(r => r[headers[0]]);
-        onSuccess(rows, text);
+        onSuccess(normalizeRows(rows), text);
       }
     } catch (err) { onError(err); }
   };
@@ -158,8 +173,8 @@ function readFile(file: File, onSuccess: (rows: Record<string, string>[], csvTex
 }
 
 function getStats(rows: Record<string, string>[]) {
-  const dates = [...new Set(rows.map(r => normalizeDate(r.Date || r.date)).filter(Boolean))].sort();
-  return { dates, lastDate: dates[dates.length - 1] || "", totalRows: rows.length, advertisers: [...new Set(rows.map(r => r.Advertiser_name || r.owner_name).filter(Boolean))].length };
+  const dates = [...new Set(rows.map(r => normalizeDate(r.Date)).filter(Boolean))].sort();
+  return { dates, lastDate: dates[dates.length - 1] || "", totalRows: rows.length, advertisers: [...new Set(rows.map(r => r.Advertiser_name).filter(Boolean))].length };
 }
 
 function todayLabel(): string {
