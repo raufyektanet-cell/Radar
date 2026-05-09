@@ -694,7 +694,7 @@ function Sidebar({ screen, setScreen, isDark, setIsDark, hasResult, hasCsv, sess
     if (id === "upload") return true;
     if (id === "results") return hasResult;
     if (["dashboard", "marketmap", "trends", "industry", "team", "explorer",
-         "competitor", "leads", "alerts", "brief"].includes(id)) return hasCsv;
+         "competitor", "leads", "alerts", "brief", "profile"].includes(id)) return hasCsv;
     return true;
   };
 
@@ -849,6 +849,7 @@ export default function App() {
   const [resultsTab, setResultsTab] = useState<"advertisers" | "leads" | "competitors" | "industry">("advertisers");
   const [modalAdv, setModalAdv] = useState<{ adv: Advertiser; type: string } | null>(null);
   const [toast, setToast] = useState<{ msg: string; type: "success" | "error" } | null>(null);
+  const [selectedAdvId, setSelectedAdvId] = useState<string | null>(null);
   const [loadingProgress, setLoadingProgress] = useState(0);
   const loadingTimer = useRef<ReturnType<typeof setInterval> | null>(null);
   const [apiKeyInput, setApiKeyInput] = useState(() => localStorage.getItem("radar:openrouter_key") || "");
@@ -1540,14 +1541,13 @@ export default function App() {
     const TR_COMP: Record<string, string> = { Tapsell:"تپسل",Deema:"دیما",Tavoos:"طاووس",Adexo:"ادکسو",Chavosh:"چاووش",Aparat:"آپارات",Daart:"دارت",Yellowadwise:"یلو ادوایز",Najva:"نجوا",Triboon:"تریبون",Jaryan:"جریان",Telewebion:"تلوبیون",Adverge:"ادورج",Soroush:"سروش",Soroush_ny:"سروش",Bale_ny:"بله",Rubika_ny:"روبیکا",Eitaa_ny:"ایتا",Bazaar:"بازار",Myket:"مایکت" };
 
     // Unique advertisers by Owner_id
-    const advSet = new Map<string, { name: string; industry: string; team: string; am: string; pm: string; sup: string; sessions: number; ykt: number; spend: number; comps: Record<string,number> }>();
+    const advSet = new Map<string, { id: string; name: string; industry: string; team: string; am: string; pm: string; sup: string; sessions: number; ykt: number; comps: Record<string,number> }>();
     rows.forEach(r => {
       const id = (r.Owner_id || r.Advertiser_name || "").trim();
       if (!id) return;
-      const cur = advSet.get(id) || { name: r.Advertiser_name || id, industry: r.Category_level_1 || "", team: r.Team || "", am: r.Account_manager_name || "", pm: r.Performance_manager_name || "", sup: r.Supervisor_name || "", sessions: 0, ykt: 0, spend: 0, comps: {} };
+      const cur = advSet.get(id) || { id, name: r.Advertiser_name || id, industry: r.Category_level_1 || "", team: r.Team || "", am: r.Account_manager_name || "", pm: r.Performance_manager_name || "", sup: r.Supervisor_name || "", sessions: 0, ykt: 0, comps: {} };
       cur.sessions += Number(r.Total_sessions) || 0;
       cur.ykt += Number(r.Yektanet) || 0;
-      cur.spend += Number(r.Daily_spend) || 0;
       COMP_COLS.forEach(c => { cur.comps[c] = (cur.comps[c] || 0) + (Number(r[c]) || 0); });
       advSet.set(id, cur);
     });
@@ -1557,13 +1557,12 @@ export default function App() {
     const totalSessions = advList.reduce((s, a) => s + a.sessions, 0);
     const totalYkt = advList.reduce((s, a) => s + a.ykt, 0);
     const yktShare = totalSessions > 0 ? Math.round(totalYkt / totalSessions * 100) : 0;
-    const totalSpend = advList.reduce((s, a) => s + a.spend, 0);
-    const dates = [...new Set(rows.map(r => r.Date || r.date).filter(Boolean))].sort();
+    const dates = [...new Set(rows.map(r => r.Date).filter(Boolean))].sort();
 
     // Daily trend (last 7 days)
     const dailyMap = new Map<string, { total: number; ykt: number }>();
     rows.forEach(r => {
-      const d = r.Date || r.date || "";
+      const d = r.Date || "";
       if (!d) return;
       const cur = dailyMap.get(d) || { total: 0, ykt: 0 };
       cur.total += Number(r.Total_sessions) || 0;
@@ -1601,7 +1600,7 @@ export default function App() {
     return (
       <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
         {/* KPI row */}
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 12 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 12 }}>
           <KpiCard label="کل سشن‌ها" value={formatNumber(totalSessions)} sub={`${advList.length} آگهی‌دهنده`} color={D.accent}
             icon={<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>} />
           <KpiCard label="سهم یکتانت" value={`${yktShare}٪`} sub={`از ${formatNumber(totalYkt)} سشن`} color={yktColor} delay={40}
@@ -1610,8 +1609,6 @@ export default function App() {
             icon={<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 7V5a2 2 0 00-2-2h-4a2 2 0 00-2 2v2"/></svg>} />
           <KpiCard label="لیدهای فعال" value={leads.length} sub="بدون یکتانت" color={D.green} delay={120}
             icon={<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg>} />
-          <KpiCard label="درآمد تخمینی" value={fmtMoney(totalSpend)} sub="تومان" color={D.amber} delay={160}
-            icon={<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/></svg>} />
         </div>
 
         {/* Main 2-col: trend + agency distribution */}
@@ -1674,7 +1671,7 @@ export default function App() {
             <SectionHeader title="برترین تبلیغ‌کننده‌ها" sub="بر اساس حجم سشن"
               action={<button onClick={() => setScreen("results")} style={{ fontSize: 11, color: D.accent, background: D.accentDim, border: `1px solid ${D.accentBrd}`, borderRadius: 99, padding: "3px 10px", cursor: "pointer", fontFamily: "Vazirmatn,sans-serif" }}>همه ←</button>} />
             {top5.map((a, i) => (
-              <div key={a.name} className="fu" style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 0", borderBottom: i < 4 ? `1px solid ${D.border}` : "none", animationDelay: `${i * 40}ms` }}>
+              <div key={a.name} className="fu" onClick={() => { setSelectedAdvId(a.id); setScreen("profile"); }} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 0", borderBottom: i < 4 ? `1px solid ${D.border}` : "none", animationDelay: `${i * 40}ms`, cursor: "pointer" }}>
                 <div style={{ width: 22, height: 22, borderRadius: 6, background: D.accentDim, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, fontWeight: 800, color: D.accent, fontFamily: D.mono, flexShrink: 0 }}>{i + 1}</div>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ fontSize: 12, fontWeight: 600, color: D.t1, fontFamily: D.mono, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{a.name}</div>
@@ -1700,7 +1697,7 @@ export default function App() {
                     {atRisk.length} هشدار
                   </button>} />
                 {atRisk.map((a, i) => (
-                  <div key={a.name} className="fu" style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8, animationDelay: `${i * 40}ms` }}>
+                  <div key={a.name} className="fu" onClick={() => { setSelectedAdvId(a.id); setScreen("profile"); }} style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8, animationDelay: `${i * 40}ms`, cursor: "pointer" }}>
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={{ fontSize: 12, fontFamily: D.mono, color: D.t1, marginBottom: 3, overflow: "hidden", textOverflow: "ellipsis" }}>{a.name}</div>
                       <Sparkline data={[...Array(7)].map((_, j) => a.yktShare - (6 - j) * 2 + Math.random() * 4)} color={D.red} w={100} h={22} />
@@ -1718,7 +1715,7 @@ export default function App() {
                     {leads.length} لید ←
                   </button>} />
                 {leads.slice(0, 4).map((a, i) => (
-                  <div key={a.name} className="fu" style={{ display: "flex", alignItems: "center", gap: 10, padding: "7px 0", borderBottom: i < 3 ? `1px solid ${D.border}` : "none", animationDelay: `${i * 40}ms` }}>
+                  <div key={a.name} className="fu" onClick={() => { setSelectedAdvId(a.id); setScreen("profile"); }} style={{ display: "flex", alignItems: "center", gap: 10, padding: "7px 0", borderBottom: i < 3 ? `1px solid ${D.border}` : "none", animationDelay: `${i * 40}ms`, cursor: "pointer" }}>
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={{ fontSize: 12, fontFamily: D.mono, color: D.t1, overflow: "hidden", textOverflow: "ellipsis" }}>{a.name}</div>
                       <div style={{ fontSize: 10, color: D.t3, marginTop: 2 }}>{a.industry}</div>
@@ -2266,6 +2263,9 @@ export default function App() {
       </div>
     );
 
+    const COMP_COLS_IND = ["Tapsell","Deema","Tavoos","Adexo","Chavosh","Aparat","Daart","Yellowadwise","Najva","Triboon","Jaryan","Telewebion","Adverge","Soroush","Soroush_ny","Bale_ny","Rubika_ny","Eitaa_ny","Bazaar","Myket"];
+    const TR_COMP_IND: Record<string,string> = { Tapsell:"تپسل",Deema:"دیما",Tavoos:"طاووس",Adexo:"ادکسو",Chavosh:"چاووش",Aparat:"آپارات",Daart:"دارت",Yellowadwise:"یلو ادوایز",Najva:"نجوا",Triboon:"تریبون",Jaryan:"جریان",Telewebion:"تلوبیون",Adverge:"ادورج",Soroush:"سروش",Soroush_ny:"سروش",Bale_ny:"بله",Rubika_ny:"روبیکا",Eitaa_ny:"ایتا",Bazaar:"بازار",Myket:"مایکت" };
+
     const rows = csvData.rows;
     const indMap2 = new Map<string, { sessions: number; ykt: number; advertisers: number; names: string[] }>();
     const advSeen = new Map<string, string>();
@@ -2279,6 +2279,25 @@ export default function App() {
       cur.ykt += Number(r.Yektanet) || 0;
       if (!advSeen.has(id)) { advSeen.set(id, ind); cur.advertisers++; cur.names.push(r.Advertiser_name || id); }
     });
+
+    // Per-advertiser breakdown for selected industry
+    const indAdvs = useMemo(() => {
+      if (!selInd) return [];
+      const map = new Map<string, { id: string; name: string; sessions: number; ykt: number; comps: Record<string,number> }>();
+      rows.filter(r => (r.Category_level_1 || "سایر") === selInd).forEach(r => {
+        const id = (r.Owner_id || r.Advertiser_name || "").trim(); if (!id) return;
+        const cur = map.get(id) || { id, name: r.Advertiser_name || id, sessions: 0, ykt: 0, comps: {} };
+        cur.sessions += Number(r.Total_sessions) || 0;
+        cur.ykt += Number(r.Yektanet) || 0;
+        COMP_COLS_IND.forEach(c => { cur.comps[c] = (cur.comps[c] || 0) + (Number(r[c]) || 0); });
+        map.set(id, cur);
+      });
+      return [...map.values()].map(a => {
+        const grandTot = a.ykt + COMP_COLS_IND.reduce((s, c) => s + (a.comps[c] || 0), 0);
+        const topComp = COMP_COLS_IND.map(c => ({ name: TR_COMP_IND[c] || c, value: a.comps[c] || 0 })).filter(x => x.value > 0).sort((x, y) => y.value - x.value)[0] || null;
+        return { ...a, yktShare: a.sessions > 0 ? Math.round(a.ykt / a.sessions * 100) : 0, yktOfGrand: grandTot > 0 ? Math.round(a.ykt / grandTot * 100) : 0, topComp };
+      }).sort((a, b) => b.sessions - a.sessions);
+    }, [selInd, rows]);
     const indData = [...indMap2.entries()].map(([name, d], idx) => ({
       name, ...d,
       yktShare: d.sessions > 0 ? Math.round(d.ykt / d.sessions * 100) : 0,
@@ -2341,6 +2360,38 @@ export default function App() {
             </div>
           ))}
         </div>
+
+        {/* Advertiser drill-down for selected industry */}
+        {selInd && indAdvs.length > 0 && (
+          <div className="fu" style={{ background: D.card, border: `1px solid ${D.border}`, borderRadius: 16, overflow: "hidden" }}>
+            <div style={{ padding: "14px 20px", borderBottom: `1px solid ${D.border}`, display: "flex", alignItems: "center", gap: 10 }}>
+              <div style={{ width: 10, height: 10, borderRadius: "50%", background: indData.find(i => i.name === selInd)?.color || D.accent, flexShrink: 0 }} />
+              <div style={{ fontSize: 14, fontWeight: 700, color: D.t1, flex: 1 }}>{selInd} — {indAdvs.length} تبلیغ‌کننده</div>
+              <button onClick={() => setSelInd(null)} style={{ background: "none", border: "none", cursor: "pointer", color: D.t3, fontSize: 18, lineHeight: 1, padding: "0 4px" }}>×</button>
+            </div>
+            {indAdvs.map((a, i) => (
+              <div key={a.id} onClick={() => { setSelectedAdvId(a.id); setScreen("profile"); }}
+                style={{ padding: "12px 20px", borderBottom: i < indAdvs.length - 1 ? `1px solid ${D.border}` : "none", display: "flex", alignItems: "center", gap: 14, cursor: "pointer", transition: "background .12s" }}
+                onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = D.cardHov}
+                onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = "transparent"}>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 12, fontWeight: 600, color: D.t1, fontFamily: D.mono, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{a.name}</div>
+                  <div style={{ fontSize: 10, color: D.t3, marginTop: 2, fontFamily: D.mono }}>{formatNumber(a.sessions)} سشن</div>
+                </div>
+                <div style={{ width: 160, flexShrink: 0 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                    <div style={{ flex: 1, height: 4, borderRadius: 2, background: D.border, overflow: "hidden" }}>
+                      <div style={{ width: `${a.yktOfGrand}%`, height: "100%", background: D.accent, borderRadius: 2 }} />
+                    </div>
+                    <span style={{ fontSize: 11, fontFamily: D.mono, color: a.yktShare >= 50 ? D.accent : a.yktShare >= 30 ? D.amber : D.red, fontWeight: 700, width: 32, textAlign: "left", flexShrink: 0 }}>{a.yktShare}٪</span>
+                  </div>
+                  {a.topComp && <div style={{ fontSize: 9, color: D.t3, marginTop: 2 }}>رقیب اصلی: {a.topComp.name} ({formatNumber(a.topComp.value)})</div>}
+                </div>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={D.t3} strokeWidth="2"><polyline points="15 18 9 12 15 6"/></svg>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
     );
   };
@@ -2359,21 +2410,20 @@ export default function App() {
     );
 
     const rows = csvData.rows;
-    const teamMap2 = new Map<string, { sessions: number; ykt: number; advertisers: Set<string>; spend: number; members: Set<string> }>();
+    const teamMap2 = new Map<string, { sessions: number; ykt: number; advertisers: Set<string>; members: Set<string> }>();
     rows.forEach(r => {
       const team = r.Team || ""; if (!team) return;
       const id = (r.Owner_id || r.Advertiser_name || "").trim();
-      const cur = teamMap2.get(team) || { sessions: 0, ykt: 0, advertisers: new Set(), spend: 0, members: new Set() };
+      const cur = teamMap2.get(team) || { sessions: 0, ykt: 0, advertisers: new Set(), members: new Set() };
       cur.sessions += Number(r.Total_sessions) || 0;
       cur.ykt += Number(r.Yektanet) || 0;
-      cur.spend += Number(r.Daily_spend) || 0;
       if (id) cur.advertisers.add(id);
       if (r.Account_manager_name) cur.members.add(r.Account_manager_name);
       teamMap2.set(team, cur);
     });
     const teamColors = [D.accent, D.blue, D.green, D.amber, D.t2];
     const teamsData = [...teamMap2.entries()].map(([name, d], idx) => ({
-      name, sessions: d.sessions, ykt: d.ykt, spend: d.spend,
+      name, sessions: d.sessions, ykt: d.ykt,
       advertisers: d.advertisers.size, members: [...d.members],
       avgYkt: d.sessions > 0 ? Math.round(d.ykt / d.sessions * 100) : 0,
       color: teamColors[idx % teamColors.length],
@@ -2385,8 +2435,8 @@ export default function App() {
     // Advertisers for selected team
     const selTeamAdvs = sel2 ? [...new Map(rows.filter(r => r.Team === sel2.name).map(r => {
       const id = (r.Owner_id || r.Advertiser_name || "").trim();
-      return [id, { name: r.Advertiser_name || id, cat1: r.Category_level_1 || "" }];
-    })).values()].slice(0, 10) : [];
+      return [id, { id, name: r.Advertiser_name || id, cat1: r.Category_level_1 || "" }];
+    })).values()].slice(0, 20) : [];
 
     if (teamsData.length === 0) return <div style={{ textAlign: "center", padding: "4rem", color: D.t3, fontSize: 13 }}>داده تیم در فایل یافت نشد</div>;
 
@@ -2431,17 +2481,20 @@ export default function App() {
             <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 14 }}>
               <KpiCard label="تبلیغ‌کننده فعال" value={sel2.advertisers} color={D.blue} />
               <KpiCard label="مجموع سشن" value={formatNumber(sel2.sessions)} color={D.accent} delay={40} />
-              <KpiCard label="درآمد تخمینی" value={fmtMoney(sel2.spend)} color={D.amber} delay={80} />
+              <KpiCard label="اعضای تیم" value={sel2.members.length} color={D.amber} delay={80} />
             </div>
 
             <div style={{ background: D.card, border: `1px solid ${D.border}`, borderRadius: 14, padding: "16px 20px" }}>
               <SectionHeader title="تبلیغ‌کننده‌های این تیم" />
               {selTeamAdvs.map((a, i) => (
-                <div key={a.name} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 0", borderBottom: i < selTeamAdvs.length - 1 ? `1px solid ${D.border}` : "none" }}>
+                <div key={a.name} onClick={() => { setSelectedAdvId(a.id); setScreen("profile"); }} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 0", borderBottom: i < selTeamAdvs.length - 1 ? `1px solid ${D.border}` : "none", cursor: "pointer" }}
+                  onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = D.cardHov}
+                  onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = "transparent"}>
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ fontSize: 12, fontFamily: D.mono, color: D.t1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{a.name}</div>
                     {a.cat1 && <div style={{ fontSize: 10, color: D.t3, marginTop: 1 }}>{a.cat1}</div>}
                   </div>
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke={D.t3} strokeWidth="2"><polyline points="15 18 9 12 15 6"/></svg>
                 </div>
               ))}
             </div>
@@ -2685,21 +2738,20 @@ export default function App() {
 
     const allData = useMemo(() => {
       if (!csvData) return [];
-      const advSet5 = new Map<string, { name: string; id: string; cat1: string; am: string; team: string; sessions: number; ykt: number; spend: number }>();
+      const advSet5 = new Map<string, { name: string; id: string; cat1: string; am: string; team: string; sessions: number; ykt: number }>();
       csvData.rows.forEach(r => {
         const id = (r.Owner_id || r.Advertiser_name || "").trim();
         if (!id) return;
-        const cur = advSet5.get(id) || { name: r.Advertiser_name || id, id, cat1: r.Category_level_1 || "", am: r.Account_manager_name || "", team: r.Team || "", sessions: 0, ykt: 0, spend: 0 };
+        const cur = advSet5.get(id) || { name: r.Advertiser_name || id, id, cat1: r.Category_level_1 || "", am: r.Account_manager_name || "", team: r.Team || "", sessions: 0, ykt: 0 };
         cur.sessions += Number(r.Total_sessions) || 0;
         cur.ykt += Number(r.Yektanet) || 0;
-        cur.spend += Number(r.Daily_spend) || 0;
         advSet5.set(id, cur);
       });
       let items = [...advSet5.values()].map(a => ({ ...a, yktShare: a.sessions > 0 ? Math.round(a.ykt / a.sessions * 100) : 0 }));
       if (searchEx) items = items.filter(a => a.name.toLowerCase().includes(searchEx.toLowerCase()) || a.id.includes(searchEx) || a.cat1.includes(searchEx) || a.am.includes(searchEx));
       items.sort((a, b) => {
-        const av = sortCol === "ykt" ? a.yktShare : sortCol === "spend" ? a.spend : a.sessions;
-        const bv = sortCol === "ykt" ? b.yktShare : sortCol === "spend" ? b.spend : b.sessions;
+        const av = sortCol === "ykt" ? a.yktShare : a.sessions;
+        const bv = sortCol === "ykt" ? b.yktShare : b.sessions;
         return sortDir === "desc" ? bv - av : av - bv;
       });
       return items;
@@ -2710,8 +2762,8 @@ export default function App() {
     const toggleSort = (k: string) => { if (sortCol === k) setSortDir(d => d === "desc" ? "asc" : "desc"); else { setSortCol(k); setSortDir("desc"); setPage(0); } };
 
     const exportCsv = () => {
-      const header = "نام,شناسه,صنعت,اکانت منیجر,تیم,سشن,سهم یکتانت,هزینه";
-      const rows2 = allData.map(a => `${a.name},${a.id},${a.cat1},${a.am},${a.team},${a.sessions},${a.yktShare}%,${a.spend}`);
+      const header = "نام,شناسه,صنعت,اکانت منیجر,تیم,سشن,سهم یکتانت";
+      const rows2 = allData.map(a => `${a.name},${a.id},${a.cat1},${a.am},${a.team},${a.sessions},${a.yktShare}%`);
       const blob = new Blob([header + "\n" + rows2.join("\n")], { type: "text/csv;charset=utf-8;" });
       const url = URL.createObjectURL(blob);
       const link = document.createElement("a");
@@ -2735,7 +2787,7 @@ export default function App() {
       { key: "team", l: "تیم", w: "80px" },
       { key: "sessions", l: "سشن", w: "80px", sort: true },
       { key: "ykt", l: "یکتانت٪", w: "90px", sort: true },
-      { key: "spend", l: "هزینه", w: "80px", sort: true },
+      { key: "profile", l: "", w: "40px" },
     ];
 
     return (
@@ -2767,7 +2819,8 @@ export default function App() {
         {/* Table body */}
         <div style={{ display: "flex", flexDirection: "column" }}>
           {pageData.map((a, i) => (
-            <div key={a.id} style={{ display: "grid", gridTemplateColumns: cols.map(c => c.w).join(" "), gap: 8, alignItems: "center", height: 40, borderBottom: `1px solid ${D.border}`, transition: "background .1s" }}
+            <div key={a.id} style={{ display: "grid", gridTemplateColumns: cols.map(c => c.w).join(" "), gap: 8, alignItems: "center", height: 40, borderBottom: `1px solid ${D.border}`, transition: "background .1s", cursor: "pointer" }}
+              onClick={() => { setSelectedAdvId(a.id); setScreen("profile"); }}
               onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = D.cardHov}
               onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = "transparent"}>
               <div style={{ fontSize: 11, fontFamily: D.mono, color: D.t1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{a.name}</div>
@@ -2782,7 +2835,9 @@ export default function App() {
                 </div>
                 <span style={{ fontSize: 10, fontFamily: D.mono, color: a.yktShare >= 60 ? D.green : a.yktShare >= 40 ? D.accent : D.red, width: 28, textAlign: "left" }}>{a.yktShare}٪</span>
               </div>
-              <div style={{ fontSize: 10, fontFamily: D.mono, color: D.amber }}>{fmtMoney(a.spend)}</div>
+              <div style={{ display: "flex", justifyContent: "center" }}>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={D.t3} strokeWidth="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+              </div>
             </div>
           ))}
         </div>
@@ -2796,6 +2851,186 @@ export default function App() {
             {Array.from({ length: Math.min(totalPages, 10) }, (_, i) => (
               <button key={i} onClick={() => setPage(i)} style={{ width: 28, height: 28, borderRadius: 7, border: `1px solid ${page === i ? D.accentBrd : D.border}`, background: page === i ? D.accentDim : "transparent", color: page === i ? D.accent : D.t3, fontSize: 11, cursor: "pointer", fontFamily: D.mono, transition: "all .12s" }}>{i + 1}</button>
             ))}
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  // ─ Advertiser Profile screen ─────────────────────────────────────────────────
+  const AdvertiserProfileScreen = () => {
+    const D = useD();
+    const COMP_COLS_P = ["Tapsell","Deema","Tavoos","Adexo","Chavosh","Aparat","Daart","Yellowadwise","Najva","Triboon","Jaryan","Telewebion","Adverge","Soroush","Soroush_ny","Bale_ny","Rubika_ny","Eitaa_ny","Bazaar","Myket"];
+    const TR_COMP_P: Record<string,string> = { Tapsell:"تپسل",Deema:"دیما",Tavoos:"طاووس",Adexo:"ادکسو",Chavosh:"چاووش",Aparat:"آپارات",Daart:"دارت",Yellowadwise:"یلو ادوایز",Najva:"نجوا",Triboon:"تریبون",Jaryan:"جریان",Telewebion:"تلوبیون",Adverge:"ادورج",Soroush:"سروش",Soroush_ny:"سروش",Bale_ny:"بله",Rubika_ny:"روبیکا",Eitaa_ny:"ایتا",Bazaar:"بازار",Myket:"مایکت" };
+
+    if (!csvData || !selectedAdvId) return (
+      <div style={{ textAlign: "center", padding: "5rem 2rem", display: "flex", flexDirection: "column", alignItems: "center", gap: 16 }}>
+        <RadarHero />
+        <p style={{ margin: 0, fontSize: 14, color: D.t3 }}>تبلیغ‌کننده‌ای انتخاب نشده</p>
+        <button onClick={() => setScreen("explorer")} style={{ padding: "10px 24px", borderRadius: 12, border: "none", background: D.accent, color: "#fff", fontSize: 13, fontWeight: 600, cursor: "pointer" }}>رفتن به دیتا</button>
+      </div>
+    );
+
+    const advRows = csvData.rows.filter(r => (r.Owner_id || r.Advertiser_name || "").trim() === selectedAdvId);
+    if (advRows.length === 0) return (
+      <div style={{ textAlign: "center", padding: "4rem", color: D.t3 }}>
+        <p>اطلاعاتی برای این تبلیغ‌کننده یافت نشد</p>
+        <button onClick={() => setScreen("explorer")} style={{ marginTop: 16, padding: "8px 20px", borderRadius: 10, border: "none", background: D.accent, color: "#fff", fontSize: 13, cursor: "pointer" }}>برگشت</button>
+      </div>
+    );
+
+    const info = advRows[0];
+    const totalSessions = advRows.reduce((s, r) => s + (Number(r.Total_sessions) || 0), 0);
+    const totalYkt = advRows.reduce((s, r) => s + (Number(r.Yektanet) || 0), 0);
+    const yktShare = totalSessions > 0 ? Math.round(totalYkt / totalSessions * 100) : 0;
+    const yktColor = yktShare >= 50 ? D.accent : yktShare >= 30 ? D.amber : D.red;
+
+    // Agency breakdown across all dates
+    const agencyTotals = COMP_COLS_P.map(col => ({
+      name: TR_COMP_P[col] || col,
+      value: advRows.reduce((s, r) => s + (Number(r[col]) || 0), 0),
+      color: AGENCY_COLORS[TR_COMP_P[col] || col] || "#888",
+    })).filter(a => a.value > 0).sort((a, b) => b.value - a.value);
+    const grandTotal = totalYkt + agencyTotals.reduce((s, a) => s + a.value, 0);
+
+    // Daily trend
+    const dailyMap = new Map<string, { total: number; ykt: number }>();
+    advRows.forEach(r => {
+      const d = r.Date || ""; if (!d) return;
+      const cur = dailyMap.get(d) || { total: 0, ykt: 0 };
+      cur.total += Number(r.Total_sessions) || 0;
+      cur.ykt += Number(r.Yektanet) || 0;
+      dailyMap.set(d, cur);
+    });
+    const trend = [...dailyMap.entries()].sort((a, b) => a[0].localeCompare(b[0])).map(([date, { total, ykt }]) => ({
+      date, total, share: total > 0 ? Math.round(ykt / total * 100) : 0,
+    }));
+
+    // AI result for this advertiser if analysis was run
+    const aiAdv = result?.advertisers.find(a => a.ownerid === selectedAdvId || a.name === info.Advertiser_name)
+      || result?.leads.find(l => l.ownerid === selectedAdvId || l.name === info.Advertiser_name);
+
+    const backTarget = window.history.length > 1 ? null : "explorer";
+
+    return (
+      <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+        {/* Back */}
+        <button onClick={() => window.history.back()} style={{ alignSelf: "flex-start", display: "flex", alignItems: "center", gap: 6, padding: "6px 14px", borderRadius: 8, border: `1px solid ${D.border}`, background: "transparent", color: D.t2, fontSize: 12, cursor: "pointer", fontFamily: "Vazirmatn,sans-serif" }}>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="9 18 15 12 9 6"/></svg>
+          برگشت
+        </button>
+
+        {/* Header card */}
+        <div className="fu" style={{ background: D.card, border: `1px solid ${D.border}`, borderRadius: 18, padding: "24px 28px", display: "flex", alignItems: "flex-start", gap: 20 }}>
+          <div style={{ width: 64, height: 64, borderRadius: 18, background: D.accentDim, border: `1px solid ${D.accentBrd}`, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+            <span style={{ fontSize: 26, fontFamily: D.mono, fontWeight: 900, color: D.accent }}>{(info.Advertiser_name || "?")[0].toUpperCase()}</span>
+          </div>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontSize: 22, fontWeight: 800, color: D.t1, letterSpacing: "-.4px" }}>{info.Advertiser_name}</div>
+            <div style={{ fontSize: 11, color: D.t3, fontFamily: D.mono, marginTop: 2 }}>ID: {info.Owner_id}</div>
+            <div style={{ display: "flex", gap: 6, marginTop: 10, flexWrap: "wrap" }}>
+              {info.Category_level_1 && <span style={{ fontSize: 11, background: D.accentDim, color: D.accent, border: `1px solid ${D.accentBrd}`, padding: "3px 10px", borderRadius: 20 }}>{info.Category_level_1}</span>}
+              {info.Category_level_2 && <span style={{ fontSize: 11, background: D.card, color: D.t2, border: `1px solid ${D.border}`, padding: "3px 10px", borderRadius: 20 }}>{info.Category_level_2}</span>}
+              {info.Team && <span style={{ fontSize: 11, background: D.card, color: D.amber, border: `1px solid ${D.border}`, padding: "3px 10px", borderRadius: 20 }}>تیم {info.Team}</span>}
+            </div>
+          </div>
+          <div style={{ textAlign: "center", flexShrink: 0 }}>
+            <div style={{ fontSize: 56, fontWeight: 900, color: yktColor, fontFamily: D.mono, lineHeight: 1, letterSpacing: "-3px" }}>{yktShare}٪</div>
+            <div style={{ fontSize: 10, color: D.t3, marginTop: 4 }}>سهم یکتانت</div>
+          </div>
+        </div>
+
+        {/* KPI strip */}
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 12 }}>
+          <KpiCard label="مجموع سشن" value={formatNumber(totalSessions)} color={D.accent}
+            icon={<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>} />
+          <KpiCard label="سشن یکتانت" value={formatNumber(totalYkt)} color={yktColor} delay={40}
+            icon={<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="4"/></svg>} />
+          <KpiCard label="بازه داده" value={`${trend.length} روز`} color={D.blue} delay={80}
+            icon={<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>} />
+        </div>
+
+        {/* Daily trend */}
+        {trend.length > 1 && (
+          <div className="fu" style={{ background: D.card, border: `1px solid ${D.border}`, borderRadius: 16, padding: "18px 20px" }}>
+            <SectionHeader title="روند روزانه" sub={`${trend.length} روز`} />
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginBottom: 14 }}>
+              <div>
+                <div style={{ fontSize: 10, color: D.t3, textTransform: "uppercase", letterSpacing: ".06em", marginBottom: 4 }}>مجموع سشن</div>
+                <MiniLineChart data={trend.map(d => d.total)} color={D.blue} h={72} />
+              </div>
+              <div>
+                <div style={{ fontSize: 10, color: D.t3, textTransform: "uppercase", letterSpacing: ".06em", marginBottom: 4 }}>سهم یکتانت ٪</div>
+                <MiniLineChart data={trend.map(d => d.share)} color={yktColor} h={72} />
+              </div>
+            </div>
+            <div style={{ display: "flex", gap: 10, overflowX: "auto", paddingBottom: 2 }}>
+              {trend.map((d, i) => (
+                <div key={i} style={{ textAlign: "center", flexShrink: 0 }}>
+                  <div style={{ fontSize: 9, color: D.t3, fontFamily: D.mono }}>{d.date.slice(5)}</div>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: yktColor, fontFamily: D.mono }}>{d.share}٪</div>
+                  <div style={{ fontSize: 9, color: D.t3, fontFamily: D.mono }}>{formatNumber(d.total)}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Agency breakdown */}
+        {grandTotal > 0 && (
+          <div className="fu" style={{ background: D.card, border: `1px solid ${D.border}`, borderRadius: 16, padding: "18px 20px" }}>
+            <SectionHeader title="توزیع سشن بین آژانس‌ها" />
+            {/* Stacked bar */}
+            <div style={{ display: "flex", borderRadius: 6, overflow: "hidden", height: 12, marginBottom: 16 }}>
+              <div style={{ flex: totalYkt, background: D.accent }} title={`یکتانت ${Math.round(totalYkt/grandTotal*100)}٪`} />
+              {agencyTotals.map((ag, i) => (
+                <div key={i} style={{ flex: ag.value, background: ag.color }} title={`${ag.name} ${Math.round(ag.value/grandTotal*100)}٪`} />
+              ))}
+            </div>
+            {/* Yektanet row */}
+            <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8 }}>
+              <div style={{ width: 9, height: 9, borderRadius: "50%", background: D.accent, flexShrink: 0 }} />
+              <div style={{ fontSize: 12, color: D.t1, fontWeight: 600, width: 110 }}>یکتانت</div>
+              <div style={{ flex: 1, height: 5, borderRadius: 3, background: D.border2, overflow: "hidden" }}>
+                <div style={{ width: `${Math.round(totalYkt/grandTotal*100)}%`, height: "100%", background: D.accent, borderRadius: 3 }} />
+              </div>
+              <span style={{ fontSize: 12, fontFamily: D.mono, fontWeight: 700, color: D.accent, width: 40, textAlign: "left" }}>{Math.round(totalYkt/grandTotal*100)}٪</span>
+              <span style={{ fontSize: 11, fontFamily: D.mono, color: D.t3, width: 70, textAlign: "left" }}>{formatNumber(totalYkt)}</span>
+            </div>
+            {agencyTotals.map((ag, i) => (
+              <div key={i} style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8 }}>
+                <div style={{ width: 9, height: 9, borderRadius: "50%", background: ag.color, flexShrink: 0 }} />
+                <div style={{ fontSize: 12, color: D.t2, width: 110 }}>{ag.name}</div>
+                <div style={{ flex: 1, height: 5, borderRadius: 3, background: D.border2, overflow: "hidden" }}>
+                  <div style={{ width: `${Math.round(ag.value/grandTotal*100)}%`, height: "100%", background: ag.color, borderRadius: 3 }} />
+                </div>
+                <span style={{ fontSize: 12, fontFamily: D.mono, color: ag.color, width: 40, textAlign: "left" }}>{Math.round(ag.value/grandTotal*100)}٪</span>
+                <span style={{ fontSize: 11, fontFamily: D.mono, color: D.t3, width: 70, textAlign: "left" }}>{formatNumber(ag.value)}</span>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* Team info */}
+        {(info.Account_manager_name || info.Performance_manager_name || info.Supervisor_name) && (
+          <div className="fu" style={{ background: D.card, border: `1px solid ${D.border}`, borderRadius: 16, padding: "18px 20px" }}>
+            <SectionHeader title="تیم مسئول" />
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 12 }}>
+              {[{ label: "اکانت منیجر", value: info.Account_manager_name }, { label: "پرفورمنس منیجر", value: info.Performance_manager_name }, { label: "سوپروایزر", value: info.Supervisor_name }].filter(p => p.value).map(p => (
+                <div key={p.label} style={{ background: D.bg, borderRadius: 10, padding: "12px 14px" }}>
+                  <div style={{ fontSize: 10, color: D.t3, marginBottom: 5 }}>{p.label}</div>
+                  <div style={{ fontSize: 12, color: D.t1, fontWeight: 600 }}>{p.value}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* AI analysis if available */}
+        {aiAdv && (aiAdv.summary || (aiAdv as any).note) && (
+          <div className="fu" style={{ background: D.card, border: `1px solid ${D.accentBrd}`, borderRadius: 16, padding: "18px 20px" }}>
+            <SectionHeader title="تحلیل هوش مصنوعی" sub="AI" />
+            <p style={{ fontSize: 13, color: D.t2, lineHeight: 2, margin: 0 }}>{aiAdv.summary || (aiAdv as any).note}</p>
           </div>
         )}
       </div>
@@ -2857,6 +3092,7 @@ export default function App() {
             {screen === "alerts" && <AlertsScreen />}
             {screen === "brief" && <BriefScreen />}
             {screen === "explorer" && <ExplorerScreen />}
+            {screen === "profile" && <AdvertiserProfileScreen />}
             {screen === "reports" && <ReportsScreen />}
             {screen === "history" && <HistoryScreen />}
             {screen === "settings" && <SettingsScreen />}
