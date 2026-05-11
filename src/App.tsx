@@ -8,6 +8,7 @@ const HISTORY_KEY = "analyzer:reported_advertisers";
 const REPORTS_KEY = "analyzer:saved_reports";
 const THEME_KEY = "analyzer:theme";
 const SESSION_KEY = "radar:session";
+const ALERT_THRESH_KEY = "radar:alert_thresholds";
 const APP_PASSWORD = (import.meta.env.VITE_APP_PASSWORD as string | undefined) || "radar1403";
 
 // ── Design Tokens v2 ──────────────────────────────────────────────────────────
@@ -640,7 +641,7 @@ function LoginPage({ onLogin }: { onLogin: (u: SessionUser) => void }) {
             </svg>
           </div>
           <h1 style={{ margin: "0 0 6px", fontSize: 26, fontWeight: 800, color: T.text1, letterSpacing: "-0.5px" }}>Radar</h1>
-          <p style={{ margin: 0, fontSize: 13, color: T.text3 }}>آنالیز رقابتی روزانه یکتانت</p>
+          <p style={{ margin: 0, fontSize: 13, color: T.text3 }}>هوش بازار برای تیم‌های فروش یکتانت</p>
         </div>
 
         {/* Login card */}
@@ -2523,8 +2524,16 @@ export default function App() {
   const AlertsScreen = () => {
     const D = useD();
     const [filter, setFilter] = useState("all");
+    const [showThresh, setShowThresh] = useState(false);
 
-    // Generate alerts from csvData
+    const defaultThresh = { minSessions: 5000, critPct: 25, highPct: 40, leadMinSessions: 5000 };
+    const [thresh, setThresh] = useState<typeof defaultThresh>(() => {
+      try { return { ...defaultThresh, ...JSON.parse(localStorage.getItem(ALERT_THRESH_KEY) || "{}") }; }
+      catch { return defaultThresh; }
+    });
+    const saveThresh = (t: typeof defaultThresh) => { setThresh(t); localStorage.setItem(ALERT_THRESH_KEY, JSON.stringify(t)); };
+
+    // Generate alerts from csvData using configurable thresholds
     const generatedAlerts = useMemo(() => {
       if (!csvData) return [];
       const rows = csvData.rows;
@@ -2542,16 +2551,16 @@ export default function App() {
       const dataDate = csvData.stats.lastDate ? `داده ${csvData.stats.lastDate.slice(5)}` : "امروز";
       [...advSet3.values()].forEach(a => {
         const yktPct = a.sessions > 0 ? Math.round(a.ykt / a.sessions * 100) : 0;
-        if (a.ykt === 0 && a.sessions > 5000) {
+        if (a.ykt === 0 && a.sessions > thresh.leadMinSessions) {
           alerts.push({ id: String(idx++), advId: a.id, advertiser: a.name, msg: `حجم سشن ${formatNumber(a.sessions)} — بدون حضور یکتانت. فرصت لید.`, severity: a.sessions > 30000 ? "critical" : "high", type: "lead", read: false, time: dataDate });
-        } else if (yktPct < 25 && a.sessions > 10000) {
+        } else if (yktPct < thresh.critPct && a.sessions > thresh.minSessions * 2) {
           alerts.push({ id: String(idx++), advId: a.id, advertiser: a.name, msg: `سهم یکتانت ${yktPct}٪ — بسیار پایین. رقبا در حال افزایش سهم.`, severity: "critical", type: "decline", read: false, time: dataDate });
-        } else if (yktPct < 40 && a.sessions > 5000) {
+        } else if (yktPct < thresh.highPct && a.sessions > thresh.minSessions) {
           alerts.push({ id: String(idx++), advId: a.id, advertiser: a.name, msg: `سهم یکتانت ${yktPct}٪ — در خطر از دست دادن سهم بیشتر.`, severity: "high", type: "decline", read: false, time: dataDate });
         }
       });
       return alerts.sort((a, b) => (b.severity === "critical" ? 1 : 0) - (a.severity === "critical" ? 1 : 0)).slice(0, 30);
-    }, [csvData]);
+    }, [csvData, thresh]);
 
     const [localAlerts, setLocalAlerts] = useState(generatedAlerts);
     const markRead = (id: string) => setLocalAlerts(as => as.map(a => a.id === id ? { ...a, read: true } : a));
@@ -2576,6 +2585,9 @@ export default function App() {
               <div style={{ fontSize: 18, fontWeight: 800, color: D.t1, letterSpacing: "-.3px" }}>مرکز هشدار</div>
               <div style={{ fontSize: 11, color: D.t3, fontFamily: D.mono, marginTop: 2 }}>{localAlerts.filter(a => !a.read).length} هشدار خوانده‌نشده</div>
             </div>
+            <button onClick={() => setShowThresh(v => !v)} title="تنظیم آستانه هشدارها" style={{ padding: "6px 8px", borderRadius: 8, border: `1px solid ${showThresh ? D.accentBrd : D.border}`, background: showThresh ? D.accentDim : "transparent", color: showThresh ? D.accent : D.t3, cursor: "pointer", display: "flex", alignItems: "center" }}>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="3"/><path d="M19.07 4.93a10 10 0 010 14.14M4.93 4.93a10 10 0 000 14.14"/><path d="M1 12h2m18 0h2M12 1v2m0 18v2"/></svg>
+            </button>
             <button onClick={markAll} style={{ fontSize: 11, color: D.accent, background: D.accentDim, border: `1px solid ${D.accentBrd}`, borderRadius: 99, padding: "5px 14px", cursor: "pointer", fontFamily: "Vazirmatn,sans-serif" }}>همه را خوانده علامت بزن</button>
           </div>
           <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
@@ -2583,6 +2595,30 @@ export default function App() {
               <Pill key={id} label={l} active={filter === id} onClick={() => setFilter(id)} />
             ))}
           </div>
+          {showThresh && (
+            <div style={{ marginTop: 12, padding: "14px 16px", background: D.card, border: `1px solid ${D.border}`, borderRadius: 12 }}>
+              <div style={{ fontSize: 12, fontWeight: 700, color: D.t1, marginBottom: 10 }}>آستانه هشدارها</div>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                {([
+                  ["حداقل سشن (هشدار سهم)", "minSessions", 1000, 50000, 1000],
+                  ["آستانه بحرانی (٪ سهم یکتانت)", "critPct", 5, 50, 5],
+                  ["آستانه اخطار (٪ سهم یکتانت)", "highPct", 10, 70, 5],
+                  ["حداقل سشن (لید)", "leadMinSessions", 1000, 50000, 1000],
+                ] as [string, keyof typeof defaultThresh, number, number, number][]).map(([label, key, min, max, step]) => (
+                  <div key={key}>
+                    <div style={{ fontSize: 11, color: D.t3, marginBottom: 4 }}>{label}</div>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                      <input type="range" min={min} max={max} step={step} value={thresh[key]}
+                        onChange={e => saveThresh({ ...thresh, [key]: Number(e.target.value) })}
+                        style={{ flex: 1, accentColor: D.accent }} />
+                      <span style={{ fontSize: 11, fontFamily: D.mono, color: D.t1, minWidth: 38, textAlign: "left" }}>{thresh[key].toLocaleString()}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <button onClick={() => saveThresh(defaultThresh)} style={{ marginTop: 10, fontSize: 11, color: D.t3, background: "transparent", border: `1px solid ${D.border}`, borderRadius: 8, padding: "4px 12px", cursor: "pointer", fontFamily: "Vazirmatn,sans-serif" }}>بازگشت به پیش‌فرض</button>
+            </div>
+          )}
         </div>
 
         <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
@@ -2767,11 +2803,16 @@ export default function App() {
         cur.ykt += Number(r.Yektanet) || 0;
         advSet5.set(id, cur);
       });
-      let items = [...advSet5.values()].map(a => ({ ...a, yktShare: a.sessions > 0 ? Math.round(a.ykt / a.sessions * 100) : 0 }));
+      let items = [...advSet5.values()].map(a => {
+        const yktShare = a.sessions > 0 ? Math.round(a.ykt / a.sessions * 100) : 0;
+        // risk = low ykt share × log(sessions) — high sessions + low share = highest risk
+        const riskScore = a.sessions > 1000 ? Math.round((100 - yktShare) * Math.log10(a.sessions)) : 0;
+        return { ...a, yktShare, riskScore };
+      });
       if (searchEx) items = items.filter(a => a.name.toLowerCase().includes(searchEx.toLowerCase()) || a.id.includes(searchEx) || a.cat1.includes(searchEx) || a.am.includes(searchEx));
       items.sort((a, b) => {
-        const av = sortCol === "ykt" ? a.yktShare : a.sessions;
-        const bv = sortCol === "ykt" ? b.yktShare : b.sessions;
+        const av = sortCol === "ykt" ? a.yktShare : sortCol === "risk" ? a.riskScore : a.sessions;
+        const bv = sortCol === "ykt" ? b.yktShare : sortCol === "risk" ? b.riskScore : b.sessions;
         return sortDir === "desc" ? bv - av : av - bv;
       });
       return items;
@@ -2807,6 +2848,7 @@ export default function App() {
       { key: "team", l: "تیم", w: "80px" },
       { key: "sessions", l: "سشن", w: "80px", sort: true },
       { key: "ykt", l: "یکتانت٪", w: "90px", sort: true },
+      { key: "risk", l: "ریسک", w: "70px", sort: true },
       { key: "profile", l: "", w: "40px" },
     ];
 
@@ -2858,6 +2900,15 @@ export default function App() {
                   <div style={{ width: `${a.yktShare}%`, height: "100%", background: a.yktShare >= 60 ? D.green : a.yktShare >= 40 ? D.accent : D.red, borderRadius: 2 }} />
                 </div>
                 <span style={{ fontSize: 10, fontFamily: D.mono, color: a.yktShare >= 60 ? D.green : a.yktShare >= 40 ? D.accent : D.red, width: 28, textAlign: "left" }}>{a.yktShare}٪</span>
+              </div>
+              <div style={{ display: "flex", alignItems: "center", gap: 3 }} title={`امتیاز ریسک: ${a.riskScore}`}>
+                {a.riskScore > 180 ? (
+                  <span style={{ fontSize: 10, fontWeight: 700, color: D.red, background: D.redDim, border: `1px solid ${D.redBrd}`, borderRadius: 6, padding: "1px 6px" }}>بالا</span>
+                ) : a.riskScore > 100 ? (
+                  <span style={{ fontSize: 10, fontWeight: 700, color: D.amber, background: D.amberDim, border: `1px solid ${D.amberBrd}`, borderRadius: 6, padding: "1px 6px" }}>متوسط</span>
+                ) : (
+                  <span style={{ fontSize: 10, color: D.t4, borderRadius: 6, padding: "1px 6px" }}>پایین</span>
+                )}
               </div>
               <div style={{ display: "flex", justifyContent: "center" }}>
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={D.t3} strokeWidth="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
@@ -3176,12 +3227,14 @@ ${dataContext}`;
     };
 
     const QUICK_QS = [
-      "کدام آگهی‌دهنده‌ها سهم یکتانت زیر ۳۰٪ دارند؟",
+      "کدام آگهی‌دهنده‌ها بیشترین ریسک ریزش دارند؟",
+      "رقیبی که بیشترین سهم را از یکتانت گرفته کیه؟",
+      "لیدهای با اولویت بالا برای امروز کدامند؟",
+      "آگهی‌دهنده‌هایی که سهم یکتانت‌شون زیر ۳۰٪ هست؟",
+      "کدام صنعت بیشترین فرصت برای یکتانت داره؟",
+      "آگهی‌دهنده‌هایی که رقبای جدید پیدا کردن؟",
       "وضعیت تپسل در بازار چطوره؟",
-      "لیدهای اصلی امروز کدامند؟",
-      "کدام صنایع بیشترین سشن دارند؟",
-      "تیم با بیشترین سهم یکتانت کدومه؟",
-      "آگهی‌دهنده‌هایی که آپارات استفاده می‌کنند؟",
+      "روند کلی یکتانت در این داده چطور بوده؟",
     ];
 
     return (
