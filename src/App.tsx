@@ -9,6 +9,7 @@ const REPORTS_KEY = "analyzer:saved_reports";
 const THEME_KEY = "analyzer:theme";
 const SESSION_KEY = "radar:session";
 const ALERT_THRESH_KEY = "radar:alert_thresholds";
+const NOTES_KEY = "radar:adv_notes";
 const APP_PASSWORD = (import.meta.env.VITE_APP_PASSWORD as string | undefined) || "radar1403";
 
 // ── Design Tokens v2 ──────────────────────────────────────────────────────────
@@ -2792,6 +2793,27 @@ export default function App() {
     const [teamFilter, setTeamFilter] = useState("all");
     const [page, setPage] = useState(0);
     const PER = 15;
+    const [compareMap, setCompareMap] = useState<Map<string, { sessions: number; yktShare: number }> | null>(null);
+    const [compareLabel, setCompareLabel] = useState("");
+    const compareInputRef = useRef<HTMLInputElement>(null);
+
+    const loadCompare = (file: File) => {
+      readFile(file, (rows) => {
+        const advSet = new Map<string, { sessions: number; ykt: number }>();
+        rows.forEach(r => {
+          const id = (r.Owner_id || r.Advertiser_name || "").trim();
+          if (!id) return;
+          const cur = advSet.get(id) || { sessions: 0, ykt: 0 };
+          cur.sessions += Number(r.Total_sessions) || 0;
+          cur.ykt += Number(r.Yektanet) || 0;
+          advSet.set(id, cur);
+        });
+        const m = new Map<string, { sessions: number; yktShare: number }>();
+        advSet.forEach((v, id) => m.set(id, { sessions: v.sessions, yktShare: v.sessions > 0 ? Math.round(v.ykt / v.sessions * 100) : 0 }));
+        setCompareMap(m);
+        setCompareLabel(file.name.replace(/\.[^.]+$/, ""));
+      }, () => {});
+    };
 
     const teamOptions = useMemo(() => {
       if (!csvData) return [];
@@ -2857,6 +2879,10 @@ export default function App() {
       { key: "team", l: "تیم", w: "80px" },
       { key: "sessions", l: "سشن", w: "80px", sort: true },
       { key: "ykt", l: "یکتانت٪", w: "90px", sort: true },
+      ...(compareMap ? [
+        { key: "dSessions", l: "Δ سشن", w: "72px" },
+        { key: "dYkt", l: "Δ یکتانت", w: "72px" },
+      ] : []),
       { key: "risk", l: "ریسک", w: "70px", sort: true },
       { key: "profile", l: "", w: "40px" },
     ];
@@ -2879,6 +2905,18 @@ export default function App() {
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
             خروجی CSV
           </button>
+          <input ref={compareInputRef} type="file" accept=".xlsx,.csv" style={{ display: "none" }} onChange={e => { if (e.target.files?.[0]) loadCompare(e.target.files[0]); e.target.value = ""; }} />
+          {compareMap ? (
+            <button onClick={() => { setCompareMap(null); setCompareLabel(""); }} style={{ display: "flex", alignItems: "center", gap: 6, padding: "7px 14px", borderRadius: 9, border: `1px solid ${D.amberBrd}`, background: D.amberDim, color: D.amber, fontSize: 12, cursor: "pointer", fontFamily: "Vazirmatn,sans-serif" }} title={`مقایسه با: ${compareLabel}`}>
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+              {compareLabel}
+            </button>
+          ) : (
+            <button onClick={() => compareInputRef.current?.click()} style={{ display: "flex", alignItems: "center", gap: 6, padding: "7px 14px", borderRadius: 9, border: `1px solid ${D.border}`, background: "transparent", color: D.t2, fontSize: 12, cursor: "pointer", fontFamily: "Vazirmatn,sans-serif" }}>
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="16 3 21 3 21 8"/><line x1="4" y1="20" x2="21" y2="3"/><polyline points="21 16 21 21 16 21"/><line x1="15" y1="15" x2="21" y2="21"/></svg>
+              مقایسه با دوره قبل
+            </button>
+          )}
         </div>
 
         {/* Table header */}
@@ -2915,6 +2953,21 @@ export default function App() {
                 </div>
                 <span style={{ fontSize: 10, fontFamily: D.mono, color: a.yktShare >= 60 ? D.green : a.yktShare >= 40 ? D.accent : D.red, width: 28, textAlign: "left" }}>{a.yktShare}٪</span>
               </div>
+              {compareMap && (() => {
+                const prev = compareMap.get(a.id);
+                const dSess = prev ? a.sessions - prev.sessions : null;
+                const dYkt = prev ? a.yktShare - prev.yktShare : null;
+                const sessColor = dSess === null ? D.t4 : dSess > 0 ? D.green : dSess < 0 ? D.red : D.t3;
+                const yktColor = dYkt === null ? D.t4 : dYkt > 0 ? D.green : dYkt < 0 ? D.red : D.t3;
+                return (<>
+                  <div style={{ fontSize: 10, fontFamily: D.mono, color: sessColor, fontWeight: 600 }}>
+                    {dSess === null ? "—" : (dSess > 0 ? "+" : "") + formatNumber(dSess)}
+                  </div>
+                  <div style={{ fontSize: 10, fontFamily: D.mono, color: yktColor, fontWeight: 600 }}>
+                    {dYkt === null ? "—" : (dYkt > 0 ? "+" : "") + dYkt + "٪"}
+                  </div>
+                </>);
+              })()}
               <div style={{ display: "flex", alignItems: "center", gap: 3 }} title={`امتیاز ریسک: ${a.riskScore}`}>
                 {a.riskScore > 180 ? (
                   <span style={{ fontSize: 10, fontWeight: 700, color: D.red, background: D.redDim, border: `1px solid ${D.redBrd}`, borderRadius: 6, padding: "1px 6px" }}>بالا</span>
@@ -2950,6 +3003,22 @@ export default function App() {
   const AdvertiserProfileScreen = () => {
     const D = useD();
     const COMP_COLS_P = ["Tapsell","Deema","Tavoos","Adexo","Chavosh","Aparat","Daart","Yellowadwise","Najva","Triboon","Jaryan","Telewebion","Adverge","Soroush","Soroush_ny","Bale_ny","Rubika_ny","Eitaa_ny","Bazaar","Myket"];
+
+    const [note, setNote] = useState("");
+    useEffect(() => {
+      try {
+        const all = JSON.parse(localStorage.getItem(NOTES_KEY) || "{}") as Record<string, string>;
+        setNote(all[selectedAdvId || ""] || "");
+      } catch { setNote(""); }
+    }, [selectedAdvId]);
+    const saveNote = (v: string) => {
+      setNote(v);
+      try {
+        const all = JSON.parse(localStorage.getItem(NOTES_KEY) || "{}") as Record<string, string>;
+        all[selectedAdvId || ""] = v;
+        localStorage.setItem(NOTES_KEY, JSON.stringify(all));
+      } catch {}
+    };
     const TR_COMP_P: Record<string,string> = { Tapsell:"تپسل",Deema:"دیما",Tavoos:"طاووس",Adexo:"ادکسو",Chavosh:"چاووش",Aparat:"آپارات",Daart:"دارت",Yellowadwise:"یلو ادوایز",Najva:"نجوا",Triboon:"تریبون",Jaryan:"جریان",Telewebion:"تلوبیون",Adverge:"ادورج",Soroush:"سروش",Soroush_ny:"سروش",Bale_ny:"بله",Rubika_ny:"روبیکا",Eitaa_ny:"ایتا",Bazaar:"بازار",Myket:"مایکت" };
 
     if (!csvData || !selectedAdvId) return (
@@ -3151,6 +3220,19 @@ export default function App() {
             <p style={{ fontSize: 13, color: D.t2, lineHeight: 2, margin: 0 }}>{aiAdv.summary || (aiAdv as any).note}</p>
           </div>
         )}
+
+        {/* Notes */}
+        <div className="fu" style={{ background: D.card, border: `1px solid ${D.border}`, borderRadius: 16, padding: "18px 20px" }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
+            <SectionHeader title="یادداشت‌ها" sub={note ? "ذخیره شد ✓" : "ذخیره خودکار"} />
+          </div>
+          <textarea value={note} onChange={e => saveNote(e.target.value)}
+            placeholder="یادداشت‌های خود را اینجا بنویسید — مثلاً: تماس گرفته شد، مکالمه با مشتری، برنامه بعدی…"
+            rows={3}
+            style={{ width: "100%", padding: "10px 14px", borderRadius: 10, border: `1px solid ${D.border}`, background: D.bg, color: D.t1, fontSize: 13, fontFamily: "Vazirmatn,sans-serif", resize: "vertical", outline: "none", direction: "rtl", lineHeight: 1.7, boxSizing: "border-box", transition: "border-color .15s" }}
+            onFocus={e => (e.currentTarget.style.borderColor = D.accentBrd)}
+            onBlur={e => (e.currentTarget.style.borderColor = D.border)} />
+        </div>
       </div>
     );
   };
