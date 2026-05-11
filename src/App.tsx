@@ -767,12 +767,12 @@ function Sidebar({ screen, setScreen, isDark, setIsDark, hasResult, hasCsv, sess
         </div>
         {/* Theme + Logout row */}
         <div style={{ display: "flex", gap: 6 }}>
-          <button onClick={() => setIsDark(!isDark)} title={isDark ? "روشن" : "تاریک"} style={{ flex: 1, height: 32, borderRadius: 8, border: `1px solid ${D.border}`, background: "transparent", color: D.t3, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>
+          <button onClick={() => setIsDark(!isDark)} aria-label={isDark ? "حالت روشن" : "حالت تاریک"} title={isDark ? "حالت روشن" : "حالت تاریک"} style={{ flex: 1, height: 32, borderRadius: 8, border: `1px solid ${D.border}`, background: "transparent", color: D.t3, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>
             {isDark
               ? <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/></svg>
               : <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"/></svg>}
           </button>
-          <button onClick={onLogout} title="خروج" style={{ flex: 1, height: 32, borderRadius: 8, border: `1px solid ${D.redBrd}`, background: D.redDim, color: D.red, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>
+          <button onClick={onLogout} aria-label="خروج از حساب" title="خروج" style={{ flex: 1, height: 32, borderRadius: 8, border: `1px solid ${D.redBrd}`, background: D.redDim, color: D.red, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
           </button>
         </div>
@@ -783,7 +783,7 @@ function Sidebar({ screen, setScreen, isDark, setIsDark, hasResult, hasCsv, sess
 
 // ── Topbar v2 ─────────────────────────────────────────────────────────────────
 
-function Topbar({ screen, yktShare, alertCount, setScreen }: { screen: string; yktShare: number | null; alertCount: number; setScreen: (s: string) => void }) {
+function Topbar({ screen, yktShare, alertCount, unsaved, onSave, setScreen }: { screen: string; yktShare: number | null; alertCount: number; unsaved: boolean; onSave: () => void; setScreen: (s: string) => void }) {
   const D = useD();
   const jalali = toJalali(new Date());
   const pageName = PAGE_NAMES[screen] || screen;
@@ -795,6 +795,13 @@ function Topbar({ screen, yktShare, alertCount, setScreen }: { screen: string; y
         <span style={{ fontSize: 11, color: D.t4 }}>›</span>
         <span style={{ fontSize: 13, fontWeight: 700, color: D.t1 }}>{pageName}</span>
       </div>
+      {/* Unsaved indicator */}
+      {unsaved && (
+        <button onClick={onSave} title="گزارش ذخیره نشده — کلیک برای ذخیره" style={{ display: "flex", alignItems: "center", gap: 5, padding: "4px 10px", borderRadius: 8, border: `1px solid ${D.amberBrd}`, background: D.amberDim, color: D.amber, fontSize: 11, fontWeight: 600, cursor: "pointer", flexShrink: 0, fontFamily: "Vazirmatn,sans-serif", animation: "fadeIn .3s ease" }}>
+          <span style={{ width: 6, height: 6, borderRadius: "50%", background: D.amber, display: "inline-block" }} />
+          ذخیره نشده
+        </button>
+      )}
       {/* Jalali date */}
       <div style={{ fontSize: 11, color: D.t3, background: D.card, border: `1px solid ${D.border}`, borderRadius: 8, padding: "4px 10px", fontFamily: D.mono, flexShrink: 0 }}>
         {jalali}
@@ -807,7 +814,7 @@ function Topbar({ screen, yktShare, alertCount, setScreen }: { screen: string; y
         </div>
       )}
       {/* Alert bell */}
-      <button onClick={() => setScreen("alerts")} style={{ position: "relative", width: 36, height: 36, borderRadius: 9, border: `1px solid ${D.border}`, background: "transparent", color: D.t2, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+      <button onClick={() => setScreen("alerts")} aria-label="هشدارها" style={{ position: "relative", width: 36, height: 36, borderRadius: 9, border: `1px solid ${D.border}`, background: "transparent", color: D.t2, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 01-3.46 0"/></svg>
         {alertCount > 0 && <span style={{ position: "absolute", top: 4, right: 4, width: 8, height: 8, borderRadius: "50%", background: D.red }} />}
       </button>
@@ -1987,7 +1994,7 @@ export default function App() {
           </svg>
 
           {hovItem && (
-            <div style={{ position: "absolute", top: 16, left: 16, background: D.surface, border: `1px solid ${D.border2}`, borderRadius: 12, padding: "12px 14px", pointerEvents: "none", minWidth: 200, zIndex: 10 }}>
+            <div style={{ position: "absolute", top: 16, right: 16, background: D.surface, border: `1px solid ${D.border2}`, borderRadius: 12, padding: "12px 14px", pointerEvents: "none", minWidth: 200, zIndex: 10 }}>
               <div style={{ fontSize: 13, fontWeight: 700, color: D.t1, fontFamily: D.mono, marginBottom: 6 }}>{hovItem.name}</div>
               <div style={{ display: "flex", gap: 14, fontSize: 11, color: D.t2, fontFamily: D.mono }}>
                 <span>سشن: {formatNumber(hovItem.sessions)}</span>
@@ -2045,10 +2052,11 @@ export default function App() {
         const day = a.days.get(d);
         return day && day.total > 0 ? Math.round(day.ykt / day.total * 100) : 0;
       });
+      const daySessions = dates.map(d => a.days.get(d)?.total ?? 0);
       const totalYkt = [...a.days.values()].reduce((s, x) => s + x.ykt, 0);
       const totalSessions = [...a.days.values()].reduce((s, x) => s + x.total, 0);
       const yktShare = totalSessions > 0 ? Math.round(totalYkt / totalSessions * 100) : 0;
-      return { name: a.name, trend, yktShare };
+      return { name: a.name, trend, daySessions, yktShare };
     }).filter(a => a.yktShare > 0).sort((a, b) => b.yktShare - a.yktShare).slice(0, 20);
 
     return (
@@ -2078,8 +2086,10 @@ export default function App() {
                 {a.trend.map((v, j) => {
                   const intensity = v / 100;
                   const bg = v >= 60 ? `rgba(29,184,126,${intensity * .8})` : v >= 40 ? `rgba(212,98,58,${intensity * .8})` : `rgba(224,82,82,${(1 - intensity) * .8})`;
+                  const dayTotal = a.daySessions?.[j] ?? 0;
                   return (
-                    <div key={j} style={{ height: 22, borderRadius: 4, background: bg, display: "flex", alignItems: "center", justifyContent: "center" }}>
+                    <div key={j} title={`${a.name}\n${dates[j]?.slice(5) || ""}: یکتانت ${v}٪${dayTotal > 0 ? ` — ${formatNumber(dayTotal)} سشن` : ""}`}
+                      style={{ height: 22, borderRadius: 4, background: bg, display: "flex", alignItems: "center", justifyContent: "center", cursor: "default" }}>
                       {v > 0 && <span style={{ fontSize: 9, fontFamily: D.mono, color: "rgba(255,255,255,.9)", fontWeight: 600 }}>{v}</span>}
                     </div>
                   );
@@ -2090,11 +2100,11 @@ export default function App() {
               </div>
             ))}
             <div style={{ display: "flex", gap: 4, marginTop: 12, alignItems: "center" }}>
-              <span style={{ fontSize: 10, color: D.t3, marginLeft: 6 }}>کم</span>
+              <span style={{ fontSize: 10, color: D.t3, marginRight: 6 }}>کم</span>
               {[0, 20, 40, 60, 80, 100].map(v => (
                 <div key={v} style={{ width: 24, height: 12, borderRadius: 3, background: v >= 60 ? `rgba(29,184,126,${v / 100 * .8})` : v >= 40 ? `rgba(212,98,58,${v / 100 * .8})` : `rgba(224,82,82,${(1 - v / 100) * .8})` }} />
               ))}
-              <span style={{ fontSize: 10, color: D.t3, marginRight: 6 }}>زیاد</span>
+              <span style={{ fontSize: 10, color: D.t3, marginLeft: 6 }}>زیاد</span>
             </div>
           </div>
         )}
@@ -2332,10 +2342,10 @@ export default function App() {
               const isHov = selInd === ind.name;
               return (
                 <div key={i} onClick={() => setSelInd(isHov ? null : ind.name)}
-                  style={{ flex: `0 0 ${w}%`, minWidth: 60, height: 80, borderRadius: 8, background: isHov ? ind.color : ind.color + "33", border: `2px solid ${isHov ? ind.color : ind.color + "55"}`, cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 3, transition: "all .15s", padding: "4px 6px" }}>
-                  <div style={{ fontSize: isHov ? 11 : 10, fontWeight: 700, color: isHov ? "#fff" : ind.color, textAlign: "center", lineHeight: 1.3 }}>{ind.name}</div>
-                  <div style={{ fontSize: 9.5, color: isHov ? "rgba(255,255,255,.8)" : D.t3, fontFamily: D.mono }}>{formatNumber(ind.sessions)}</div>
-                  <div style={{ fontSize: 9.5, fontWeight: 700, color: isHov ? "#fff" : ind.yktShare >= 60 ? D.green : ind.yktShare >= 40 ? D.accent : D.red, fontFamily: D.mono }}>{ind.yktShare}٪</div>
+                  style={{ flex: `0 0 ${w}%`, minWidth: 60, height: 80, borderRadius: 8, background: isHov ? ind.color : ind.color + "22", border: `2px solid ${isHov ? ind.color : ind.color + "44"}`, cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 3, transition: "all .15s", padding: "4px 6px" }}>
+                  <div style={{ fontSize: isHov ? 11 : 10, fontWeight: 700, color: isHov ? "#fff" : ind.color, textAlign: "center", lineHeight: 1.3, textShadow: isHov ? "0 1px 3px rgba(0,0,0,.4)" : "none" }}>{ind.name}</div>
+                  <div style={{ fontSize: 9.5, color: isHov ? "rgba(255,255,255,.85)" : D.t3, fontFamily: D.mono, textShadow: isHov ? "0 1px 2px rgba(0,0,0,.3)" : "none" }}>{formatNumber(ind.sessions)}</div>
+                  <div style={{ fontSize: 9.5, fontWeight: 700, color: isHov ? "#fff" : ind.yktShare >= 60 ? D.green : ind.yktShare >= 40 ? D.accent : D.red, fontFamily: D.mono, textShadow: isHov ? "0 1px 2px rgba(0,0,0,.3)" : "none" }}>{ind.yktShare}٪</div>
                 </div>
               );
             })}
@@ -2529,14 +2539,15 @@ export default function App() {
       });
       const alerts: { id: string; advId: string; advertiser: string; msg: string; severity: "critical" | "high" | "medium" | "info"; type: "decline" | "lead" | "competitor" | "growth"; read: boolean; time: string }[] = [];
       let idx = 0;
+      const dataDate = csvData.stats.lastDate ? `داده ${csvData.stats.lastDate.slice(5)}` : "امروز";
       [...advSet3.values()].forEach(a => {
         const yktPct = a.sessions > 0 ? Math.round(a.ykt / a.sessions * 100) : 0;
         if (a.ykt === 0 && a.sessions > 5000) {
-          alerts.push({ id: String(idx++), advId: a.id, advertiser: a.name, msg: `حجم سشن ${formatNumber(a.sessions)} — بدون حضور یکتانت. فرصت لید.`, severity: a.sessions > 30000 ? "critical" : "high", type: "lead", read: false, time: "امروز" });
+          alerts.push({ id: String(idx++), advId: a.id, advertiser: a.name, msg: `حجم سشن ${formatNumber(a.sessions)} — بدون حضور یکتانت. فرصت لید.`, severity: a.sessions > 30000 ? "critical" : "high", type: "lead", read: false, time: dataDate });
         } else if (yktPct < 25 && a.sessions > 10000) {
-          alerts.push({ id: String(idx++), advId: a.id, advertiser: a.name, msg: `سهم یکتانت ${yktPct}٪ — بسیار پایین. رقبا در حال افزایش سهم.`, severity: "critical", type: "decline", read: false, time: "امروز" });
+          alerts.push({ id: String(idx++), advId: a.id, advertiser: a.name, msg: `سهم یکتانت ${yktPct}٪ — بسیار پایین. رقبا در حال افزایش سهم.`, severity: "critical", type: "decline", read: false, time: dataDate });
         } else if (yktPct < 40 && a.sessions > 5000) {
-          alerts.push({ id: String(idx++), advId: a.id, advertiser: a.name, msg: `سهم یکتانت ${yktPct}٪ — در خطر از دست دادن سهم بیشتر.`, severity: "high", type: "decline", read: false, time: "امروز" });
+          alerts.push({ id: String(idx++), advId: a.id, advertiser: a.name, msg: `سهم یکتانت ${yktPct}٪ — در خطر از دست دادن سهم بیشتر.`, severity: "high", type: "decline", read: false, time: dataDate });
         }
       });
       return alerts.sort((a, b) => (b.severity === "critical" ? 1 : 0) - (a.severity === "critical" ? 1 : 0)).slice(0, 30);
@@ -2576,7 +2587,11 @@ export default function App() {
 
         <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
           {filtered.length === 0 ? (
-            <div style={{ textAlign: "center", padding: "4rem", color: D.t3, fontSize: 13 }}>هشداری با این فیلتر یافت نشد</div>
+            <div style={{ textAlign: "center", padding: "4rem 2rem", display: "flex", flexDirection: "column", alignItems: "center", gap: 12 }}>
+              <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke={D.t4} strokeWidth="1.5"><path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 01-3.46 0"/></svg>
+              <div style={{ fontSize: 13, color: D.t3 }}>هشداری با این فیلتر یافت نشد</div>
+              <button onClick={() => setFilter("all")} style={{ fontSize: 12, padding: "6px 16px", borderRadius: 8, border: `1px solid ${D.border}`, background: "transparent", color: D.t2, cursor: "pointer", fontFamily: "Vazirmatn,sans-serif" }}>پاک کردن فیلتر</button>
+            </div>
           ) : filtered.map((al, i) => (
             <div key={al.id} className="fu" style={{ animationDelay: `${i * 30}ms`, display: "flex", gap: 12, padding: "14px 16px", borderRadius: 12, transition: "all .14s", background: al.read ? D.card : D.surface, border: `1px solid ${al.read ? D.border : D.border2}`, opacity: al.read ? .75 : 1 }}>
               <div style={{ width: 36, height: 36, borderRadius: 10, flexShrink: 0, background: severityColor[al.severity] + "22", border: `1px solid ${severityColor[al.severity]}44`, display: "flex", alignItems: "center", justifyContent: "center", color: severityColor[al.severity] }}>
@@ -2806,7 +2821,7 @@ export default function App() {
             style={{ padding: "6px 12px", borderRadius: 8, border: `1px solid ${D.border2}`, background: D.card, color: D.t1, fontSize: 12, fontFamily: "Vazirmatn,sans-serif", width: 200, outline: "none" }} />
           <button onClick={exportCsv} style={{ display: "flex", alignItems: "center", gap: 6, padding: "7px 14px", borderRadius: 9, border: `1px solid ${D.accentBrd}`, background: D.accentDim, color: D.accent, fontSize: 12, cursor: "pointer", fontFamily: "Vazirmatn,sans-serif" }}>
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-            Export CSV
+            خروجی CSV
           </button>
         </div>
 
@@ -2816,7 +2831,11 @@ export default function App() {
             <div key={c.key} onClick={c.sort ? () => toggleSort(c.key) : undefined}
               style={{ fontSize: 10, fontWeight: 700, color: c.sort && sortCol === c.key ? D.accent : D.t3, textTransform: "uppercase", letterSpacing: ".06em", cursor: c.sort ? "pointer" : "default", display: "flex", alignItems: "center", gap: 4, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
               {c.l}
-              {c.sort && sortCol === c.key && <span style={{ fontSize: 8 }}>{sortDir === "desc" ? "▼" : "▲"}</span>}
+              {c.sort && sortCol === c.key && (
+                <svg width="8" height="8" viewBox="0 0 10 10" fill="currentColor" style={{ flexShrink: 0 }}>
+                  {sortDir === "desc" ? <polygon points="5,8 1,2 9,2" /> : <polygon points="5,2 1,8 9,8" />}
+                </svg>
+              )}
             </div>
           ))}
         </div>
@@ -3278,7 +3297,7 @@ ${dataContext}`;
           button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible { outline: 2px solid ${tokens.accent}; outline-offset: 2px; border-radius: 4px; }
         `}</style>
 
-        <Topbar screen={screen} yktShare={topbarYktShare} alertCount={alertCount} setScreen={setScreen} />
+        <Topbar screen={screen} yktShare={topbarYktShare} alertCount={alertCount} unsaved={!!(pendingSave && saveStatus !== "saved")} onSave={confirmSave} setScreen={setScreen} />
         <Sidebar screen={screen} setScreen={setScreen} isDark={isDark} setIsDark={setIsDark} hasResult={!!result} hasCsv={!!csvData} session={session} onLogout={handleLogout} alertCount={alertCount} T={tokens} />
 
         <div style={{ marginRight: 200 }}>
