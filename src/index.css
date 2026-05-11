@@ -20,3 +20,10 @@ body { font-family: 'Vazirmatn', system-ui, sans-serif; }
 ::-webkit-scrollbar { width: 5px; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: rgba(212,98,58,0.25); border-radius: 99px; }
+
+@media print {
+  .no-print { display: none !important; }
+  .print-main { margin-right: 0 !important; }
+  .print-main > div { padding: 16px !important; max-width: 100% !important; }
+  body { background: white !important; }
+}
