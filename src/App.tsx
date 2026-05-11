@@ -16,19 +16,18 @@ function makeTokens(isDark: boolean) {
   const a = "#D4623A", ar = "212,98,58";
   if (isDark) return {
     bg: "#070B12", bgDeep: "#040709", surface: "#0D1420", card: "#111927", cardHov: "#161F30",
-    border: "rgba(255,255,255,.06)", border2: "rgba(255,255,255,.11)", border3: "rgba(255,255,255,.18)",
-    accent: a, accentDim: `rgba(${ar},.12)`, accentBrd: `rgba(${ar},.28)`, accentGlow: `rgba(${ar},.4)`, accentHov: "#C45530",
-    green: "#1DB87E", greenDim: "rgba(29,184,126,.12)", greenBrd: "rgba(29,184,126,.28)",
-    amber: "#D97B2A", amberDim: "rgba(217,123,42,.12)", amberBrd: "rgba(217,123,42,.28)",
-    red: "#E05252", redDim: "rgba(224,82,82,.12)", redBrd: "rgba(224,82,82,.28)",
-    blue: "#4A8EDB", blueDim: "rgba(74,142,219,.12)",
-    t1: "#EEF2FF", t2: "rgba(238,242,255,.60)", t3: "rgba(238,242,255,.32)", t4: "rgba(238,242,255,.14)",
+    border: "rgba(255,255,255,.08)", border2: "rgba(255,255,255,.14)", border3: "rgba(255,255,255,.22)",
+    accent: a, accentDim: `rgba(${ar},.15)`, accentBrd: `rgba(${ar},.32)`, accentGlow: `rgba(${ar},.4)`, accentHov: "#C45530",
+    green: "#1DB87E", greenDim: "rgba(29,184,126,.14)", greenBrd: "rgba(29,184,126,.32)",
+    amber: "#E08B35", amberDim: "rgba(224,139,53,.14)", amberBrd: "rgba(224,139,53,.32)",
+    red: "#E05252", redDim: "rgba(224,82,82,.14)", redBrd: "rgba(224,82,82,.32)",
+    blue: "#4A8EDB", blueDim: "rgba(74,142,219,.14)",
+    t1: "#F0F4FF", t2: "rgba(240,244,255,.75)", t3: "rgba(240,244,255,.48)", t4: "rgba(240,244,255,.20)",
     mono: "'JetBrains Mono', monospace",
-    // legacy aliases kept for upload/login/modal screens
-    surface2: "#0D1420", text1: "#EEF2FF", text2: "rgba(238,242,255,.60)", text3: "rgba(238,242,255,.32)",
-    coral: a, coralDim: `rgba(${ar},.12)`, coralBorder: `rgba(${ar},.28)`,
-    greenBorder: "rgba(29,184,126,.28)", amberBorder: "rgba(217,123,42,.28)",
-    danger: "#E05252", dangerBg: "rgba(224,82,82,.10)", dangerBorder: "rgba(224,82,82,.28)",
+    surface2: "#0D1420", text1: "#F0F4FF", text2: "rgba(240,244,255,.75)", text3: "rgba(240,244,255,.48)",
+    coral: a, coralDim: `rgba(${ar},.15)`, coralBorder: `rgba(${ar},.32)`,
+    greenBorder: "rgba(29,184,126,.32)", amberBorder: "rgba(224,139,53,.32)",
+    danger: "#E05252", dangerBg: "rgba(224,82,82,.12)", dangerBorder: "rgba(224,82,82,.32)",
   };
   return {
     bg: "#F5F2ED", bgDeep: "#EDE8DF", surface: "#FFFFFF", card: "#FFFFFF", cardHov: "#FAF7F2",
@@ -277,7 +276,8 @@ function downloadHTML(result: AnalysisResult) {
 const GLOBAL_CSS = `
 @import url('https://fonts.googleapis.com/css2?family=Vazirmatn:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600;700&display=swap');
 *{box-sizing:border-box;margin:0;padding:0}
-html,body{overflow-y:auto;overflow-x:hidden}
+html,body{overflow-y:auto;overflow-x:hidden;font-family:'Vazirmatn',system-ui,sans-serif}
+button,input,select,textarea{font-family:'Vazirmatn',system-ui,sans-serif}
 @keyframes fu{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
 @keyframes fadeUp{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:translateY(0)}}
 @keyframes radarSweep{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}
@@ -289,6 +289,14 @@ html,body{overflow-y:auto;overflow-x:hidden}
 @keyframes slideInModal{from{opacity:0;transform:translateY(-14px) scale(.97)}to{opacity:1;transform:translateY(0) scale(1)}}
 .fu{animation:fu .3s ease both}
 `;
+
+// Derive a stable brand color per advertiser from their name
+function advColor(name: string): string {
+  const palette = ["#D4623A","#3B82F6","#8B5CF6","#10B981","#F59E0B","#EF4444","#14B8A6","#6366F1","#EC4899","#06B6D4","#84CC16","#F97316"];
+  let h = 0;
+  for (let i = 0; i < name.length; i++) h = (Math.imul(h, 31) + name.charCodeAt(i)) | 0;
+  return palette[Math.abs(h) % palette.length];
+}
 
 // ── Shared UI Components v2 ───────────────────────────────────────────────────
 
@@ -390,6 +398,56 @@ function AgencyLegend({ agencies, compact = false }: { agencies: Agency[]; compa
           {a.name} {Math.round(a.value / total * 100)}٪
         </span>
       ))}
+    </div>
+  );
+}
+
+// Daily stacked bar chart — shows sessions per agency per day
+function StackedBarsChart({ days, activeAgencies }: {
+  days: { date: string; ykt: number; comps: { name: string; value: number; color: string }[] }[];
+  activeAgencies: { name: string; color: string }[];
+}) {
+  const D = useD();
+  if (days.length === 0) return null;
+  const maxTotal = Math.max(...days.map(d => d.ykt + d.comps.reduce((s, c) => s + c.value, 0)), 1);
+  const barW = Math.max(10, Math.min(28, Math.floor(640 / days.length) - 3));
+  return (
+    <div>
+      <div style={{ display: "flex", alignItems: "flex-end", gap: 3, height: 100, overflowX: "auto", paddingBottom: 4 }}>
+        {days.map((d, i) => {
+          const total = d.ykt + d.comps.reduce((s, c) => s + c.value, 0);
+          const segs: { color: string; h: number }[] = [];
+          if (d.ykt > 0) segs.push({ color: AGENCY_COLORS["یکتانت"] || "#D4623A", h: Math.max(1, Math.round(d.ykt / maxTotal * 96)) });
+          d.comps.forEach(c => { if (c.value > 0) segs.push({ color: c.color, h: Math.max(1, Math.round(c.value / maxTotal * 96)) }); });
+          return (
+            <div key={i} title={`${d.date.slice(5)}: ${formatNumber(total)} سشن`}
+              style={{ flexShrink: 0, width: barW, display: "flex", flexDirection: "column-reverse", alignItems: "stretch", gap: 1 }}>
+              {segs.map((s, j) => (
+                <div key={j} style={{ height: s.h, background: s.color, borderRadius: j === segs.length - 1 ? "2px 2px 0 0" : 0 }} />
+              ))}
+            </div>
+          );
+        })}
+      </div>
+      {/* X-axis labels */}
+      <div style={{ display: "flex", gap: 3, overflowX: "hidden" }}>
+        {days.map((d, i) => (
+          <div key={i} style={{ flexShrink: 0, width: barW, textAlign: "center", fontSize: 8, color: D.t3, fontFamily: D.mono, overflow: "hidden" }}>
+            {i % Math.max(1, Math.floor(days.length / 7)) === 0 ? d.date.slice(5) : ""}
+          </div>
+        ))}
+      </div>
+      {/* Legend */}
+      {activeAgencies.length > 0 && (
+        <div style={{ display: "flex", flexWrap: "wrap", gap: "6px 12px", marginTop: 10 }}>
+          {activeAgencies.map(ag => (
+            <span key={ag.name} style={{ fontSize: 10, color: D.t2, display: "flex", alignItems: "center", gap: 4 }}>
+              <span style={{ width: 8, height: 8, borderRadius: 2, background: ag.color, display: "inline-block" }} />
+              {ag.name}
+            </span>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -667,6 +725,7 @@ const NAV_ITEMS = [
   { id: "alerts",    fa: "هشدارها",        icon: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 01-3.46 0"/></svg> },
   { id: "brief",     fa: "خلاصه هفتگی",   icon: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg> },
   { id: "explorer",  fa: "دیتا",           icon: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="3" y1="15" x2="21" y2="15"/><line x1="9" y1="3" x2="9" y2="21"/></svg> },
+  { id: "chat",      fa: "دستیار هوشمند", icon: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg> },
 ];
 
 const PAGE_NAMES: Record<string, string> = {
@@ -674,7 +733,7 @@ const PAGE_NAMES: Record<string, string> = {
   competitor: "بررسی رقبا", marketmap: "نقشه بازار", trends: "تحلیل روند",
   leads: "لید پایپلاین", profile: "پروفایل", industry: "تحلیل صنایع",
   team: "عملکرد تیم", alerts: "مرکز هشدار", brief: "خلاصه هفتگی",
-  explorer: "اکسپلورر داده", reports: "گزارش‌ها", history: "تاریخچه", settings: "تنظیمات",
+  explorer: "اکسپلورر داده", reports: "گزارش‌ها", history: "تاریخچه", settings: "تنظیمات", chat: "دستیار هوشمند",
 };
 
 function Sidebar({ screen, setScreen, isDark, setIsDark, hasResult, hasCsv, session, onLogout, alertCount, T }: {
@@ -686,7 +745,7 @@ function Sidebar({ screen, setScreen, isDark, setIsDark, hasResult, hasCsv, sess
     if (id === "upload") return true;
     if (id === "results") return hasResult;
     if (["dashboard", "marketmap", "trends", "industry", "team", "explorer",
-         "competitor", "leads", "alerts", "brief", "profile"].includes(id)) return hasCsv;
+         "competitor", "leads", "alerts", "brief", "profile", "chat"].includes(id)) return hasCsv;
     return true;
   };
 
@@ -843,6 +902,7 @@ export default function App() {
   const [toast, setToast] = useState<{ msg: string; type: "success" | "error" } | null>(null);
   const [selectedAdvId, setSelectedAdvId] = useState<string | null>(null);
   const [prevScreen, setPrevScreen] = useState("explorer");
+  const [chatMessages, setChatMessages] = useState<{ role: "user" | "assistant"; content: string; ts: number }[]>([]);
 
   const goToProfile = (id: string) => { setPrevScreen(screen); setSelectedAdvId(id); setScreen("profile"); };
   const [loadingProgress, setLoadingProgress] = useState(0);
@@ -2871,6 +2931,7 @@ export default function App() {
     const totalYkt = advRows.reduce((s, r) => s + (Number(r.Yektanet) || 0), 0);
     const yktShare = totalSessions > 0 ? Math.round(totalYkt / totalSessions * 100) : 0;
     const yktColor = yktShare >= 50 ? D.accent : yktShare >= 30 ? D.amber : D.red;
+    const clientColor = advColor(info.Advertiser_name || selectedAdvId);
 
     // Agency breakdown across all dates
     const agencyTotals = COMP_COLS_P.map(col => ({
@@ -2880,24 +2941,30 @@ export default function App() {
     })).filter(a => a.value > 0).sort((a, b) => b.value - a.value);
     const grandTotal = totalYkt + agencyTotals.reduce((s, a) => s + a.value, 0);
 
-    // Daily trend
-    const dailyMap = new Map<string, { total: number; ykt: number }>();
+    // Daily trend + per-day agency breakdown for stacked chart
+    const stackedDayMap = new Map<string, { total: number; ykt: number; comps: Record<string, number> }>();
     advRows.forEach(r => {
       const d = r.Date || ""; if (!d) return;
-      const cur = dailyMap.get(d) || { total: 0, ykt: 0 };
+      const cur = stackedDayMap.get(d) || { total: 0, ykt: 0, comps: {} };
       cur.total += Number(r.Total_sessions) || 0;
       cur.ykt += Number(r.Yektanet) || 0;
-      dailyMap.set(d, cur);
+      COMP_COLS_P.forEach(c => { cur.comps[c] = (cur.comps[c] || 0) + (Number(r[c]) || 0); });
+      stackedDayMap.set(d, cur);
     });
-    const trend = [...dailyMap.entries()].sort((a, b) => a[0].localeCompare(b[0])).map(([date, { total, ykt }]) => ({
+    const trend = [...stackedDayMap.entries()].sort((a, b) => a[0].localeCompare(b[0])).map(([date, { total, ykt, comps }]) => ({
       date, total, share: total > 0 ? Math.round(ykt / total * 100) : 0,
+      ykt,
+      comps: COMP_COLS_P.map(c => ({ name: TR_COMP_P[c] || c, value: comps[c] || 0, color: AGENCY_COLORS[TR_COMP_P[c] || c] || "#888" })).filter(x => x.value > 0),
     }));
+    // Active agencies for legend (those with at least one day of data)
+    const activeAgencies = [
+      { name: "یکتانت", color: AGENCY_COLORS["یکتانت"] || "#D4623A" },
+      ...agencyTotals.map(a => ({ name: a.name, color: a.color })),
+    ];
 
     // AI result for this advertiser if analysis was run
     const aiAdv = result?.advertisers.find(a => a.ownerid === selectedAdvId || a.name === info.Advertiser_name)
       || result?.leads.find(l => l.ownerid === selectedAdvId || l.name === info.Advertiser_name);
-
-    const backTarget = window.history.length > 1 ? null : "explorer";
 
     return (
       <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
@@ -2909,8 +2976,8 @@ export default function App() {
 
         {/* Header card */}
         <div className="fu" style={{ background: D.card, border: `1px solid ${D.border}`, borderRadius: 18, padding: "24px 28px", display: "flex", alignItems: "flex-start", gap: 20 }}>
-          <div style={{ width: 64, height: 64, borderRadius: 18, background: D.accentDim, border: `1px solid ${D.accentBrd}`, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-            <span style={{ fontSize: 26, fontFamily: D.mono, fontWeight: 900, color: D.accent }}>{(info.Advertiser_name || "?")[0].toUpperCase()}</span>
+          <div style={{ width: 64, height: 64, borderRadius: 18, background: clientColor + "22", border: `1px solid ${clientColor}44`, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+            <span style={{ fontSize: 26, fontFamily: D.mono, fontWeight: 900, color: clientColor }}>{(info.Advertiser_name || "?")[0].toUpperCase()}</span>
           </div>
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ fontSize: 22, fontWeight: 800, color: D.t1, letterSpacing: "-.4px" }}>{info.Advertiser_name}</div>
@@ -2960,6 +3027,14 @@ export default function App() {
                 </div>
               ))}
             </div>
+          </div>
+        )}
+
+        {/* Daily stacked agency chart */}
+        {trend.length > 1 && (
+          <div className="fu" style={{ background: D.card, border: `1px solid ${D.border}`, borderRadius: 16, padding: "18px 20px" }}>
+            <SectionHeader title="توزیع روزانه آژانس‌ها" sub={`${trend.length} روز`} />
+            <StackedBarsChart days={trend} activeAgencies={activeAgencies} />
           </div>
         )}
 
@@ -3024,6 +3099,189 @@ export default function App() {
     );
   };
 
+  // ── Chat Screen ──────────────────────────────────────────────────────────────
+
+  const ChatScreen = () => {
+    const D = useD();
+    const [input, setInput] = useState("");
+    const [loading, setLoading] = useState(false);
+    const bottomRef = useRef<HTMLDivElement>(null);
+
+    const COMP_COLS_C = ["Tapsell","Deema","Tavoos","Adexo","Chavosh","Aparat","Daart","Yellowadwise","Najva","Triboon","Jaryan","Telewebion","Adverge","Soroush","Soroush_ny","Bale_ny","Rubika_ny","Eitaa_ny","Bazaar","Myket"];
+    const TR_C: Record<string,string> = {Tapsell:"تپسل",Deema:"دیما",Tavoos:"طاووس",Adexo:"ادکسو",Chavosh:"چاووش",Aparat:"آپارات",Daart:"دارت",Yellowadwise:"یلو ادوایز",Najva:"نجوا",Triboon:"تریبون",Jaryan:"جریان",Telewebion:"تلوبیون",Adverge:"ادورج",Soroush:"سروش",Soroush_ny:"سروش",Bale_ny:"بله",Rubika_ny:"روبیکا",Eitaa_ny:"ایتا",Bazaar:"بازار",Myket:"مایکت"};
+
+    const dataContext = useMemo(() => {
+      if (!csvData) return "داده‌ای بارگذاری نشده.";
+      const rows = csvData.rows;
+      const dates = [...new Set(rows.map(r => normalizeDate(r.Date)).filter(Boolean))].sort();
+      const lastDate = dates[dates.length - 1] || "";
+
+      const advMap = new Map<string, { name: string; id: string; total: number; ykt: number; team: string; am: string; cat1: string }>();
+      rows.forEach(r => {
+        const k = r.Owner_id || r.Advertiser_name || ""; if (!k) return;
+        const cur = advMap.get(k) || { name: r.Advertiser_name || k, id: k, total: 0, ykt: 0, team: r.Team || "", am: r.Account_manager_name || "", cat1: r.Category_level_1 || "" };
+        cur.total += Number(r.Total_sessions) || 0; cur.ykt += Number(r.Yektanet) || 0;
+        advMap.set(k, cur);
+      });
+
+      const advs = [...advMap.values()].filter(a => a.total > 0).sort((a, b) => b.total - a.total);
+      const top20 = advs.slice(0, 20).map(a => `${a.name}(سهم:${Math.round(a.ykt / a.total * 100)}٪,سشن:${formatNumber(a.total)},تیم:${a.team})`).join(" | ");
+      const alerts = advs.filter(a => a.ykt / a.total < 0.35).slice(0, 10).map(a => `${a.name}(${Math.round(a.ykt / a.total * 100)}٪)`).join(" | ");
+
+      const agTotals: Record<string, number> = {};
+      rows.forEach(r => { COMP_COLS_C.forEach(c => { agTotals[c] = (agTotals[c] || 0) + (Number(r[c]) || 0); }); });
+      const yktTotal = rows.reduce((s, r) => s + (Number(r.Yektanet) || 0), 0);
+      const grandTotal = rows.reduce((s, r) => s + (Number(r.Total_sessions) || 0), 0);
+      const agStr = [["یکتانت", yktTotal], ...Object.entries(agTotals).filter(([, v]) => v > 0).sort((a, b) => b[1] - a[1]).slice(0, 8).map(([k, v]) => [TR_C[k] || k, v])]
+        .map(([n, v]) => `${n}:${formatNumber(Number(v))}(${grandTotal > 0 ? Math.round(Number(v) / grandTotal * 100) : 0}٪)`).join(" | ");
+
+      const indMap = new Map<string, number>();
+      rows.forEach(r => { if (r.Category_level_1) indMap.set(r.Category_level_1, (indMap.get(r.Category_level_1) || 0) + (Number(r.Total_sessions) || 0)); });
+      const indStr = [...indMap.entries()].sort((a, b) => b[1] - a[1]).slice(0, 8).map(([k, v]) => `${k}(${formatNumber(v)})`).join(" | ");
+
+      const teamMap = new Map<string, { count: number; ykt: number; total: number }>();
+      rows.forEach(r => { if (!r.Team) return; const c = teamMap.get(r.Team) || { count: 0, ykt: 0, total: 0 }; c.total += Number(r.Total_sessions) || 0; c.ykt += Number(r.Yektanet) || 0; teamMap.set(r.Team, c); });
+      advs.forEach(a => { if (a.team) { const c = teamMap.get(a.team); if (c) c.count++; } });
+      const teamStr = [...teamMap.entries()].map(([t, v]) => `${t}(${v.count}مشتری,سهم:${v.total > 0 ? Math.round(v.ykt / v.total * 100) : 0}٪)`).join(" | ");
+
+      let ctx = `=== خلاصه داده ===\nبازه: ${dates[0]} تا ${lastDate} | کل آگهی‌دهنده: ${advs.length} | کل سشن: ${formatNumber(grandTotal)}\n\nتاپ ۲۰ آگهی‌دهنده: ${top20}\n\nآژانس‌ها: ${agStr}\n\nصنایع: ${indStr}\n\nتیم‌ها: ${teamStr}\n\nهشدار سهم پایین (زیر ۳۵٪): ${alerts || "ندارد"}`;
+      if (result) {
+        ctx += `\n\nلیدهای AI: ${result.leads.slice(0, 10).map(l => l.name).join(" | ")}\nرقبا: ${result.competitors.map(c => c.platform).join(" | ")}`;
+      }
+      return ctx;
+    }, [csvData, result]);
+
+    const CHAT_SYSTEM = `تو یک دستیار هوشمند داده برای مدیران فروش یکتانت هستی. داده‌های مارکت (سشن‌های روزانه آگهی‌دهنده‌ها در شبکه‌های تبلیغاتی ایران) در اختیارت گذاشته شده.
+قوانین: همیشه فارسی پاسخ بده | از آمار دقیق استفاده کن | پاسخ‌ها کوتاه و کاربردی باشند | اگر اطلاعات کافی نداری صادقانه بگو.
+
+${dataContext}`;
+
+    useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: "smooth" }); }, [chatMessages, loading]);
+
+    const send = async (text?: string) => {
+      const msg = (text || input).trim();
+      if (!msg || loading) return;
+      setInput("");
+      const userMsg = { role: "user" as const, content: msg, ts: Date.now() };
+      const history = [...chatMessages, userMsg];
+      setChatMessages(history);
+      setLoading(true);
+      const apiKey = OPENROUTER_KEY || localStorage.getItem("radar:openrouter_key") || "";
+      if (!apiKey) {
+        setChatMessages(prev => [...prev, { role: "assistant", content: "کلید API تنظیم نشده. در تنظیمات کلید OpenRouter را وارد کنید.", ts: Date.now() }]);
+        setLoading(false);
+        return;
+      }
+      try {
+        const resp = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "Authorization": `Bearer ${apiKey}`, "HTTP-Referer": "https://radar.yektanet.com", "X-Title": "Radar Chat" },
+          body: JSON.stringify({ model: MODEL, max_tokens: 1200, stream: true, messages: [{ role: "system", content: CHAT_SYSTEM }, ...history.map(m => ({ role: m.role, content: m.content }))] })
+        });
+        if (!resp.ok) throw new Error(await resp.text());
+        const reader = resp.body!.getReader();
+        const dec = new TextDecoder();
+        let accumulated = "";
+        setChatMessages(prev => [...prev, { role: "assistant", content: "", ts: Date.now() }]);
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          for (const line of dec.decode(value).split("\n")) {
+            if (!line.startsWith("data: ")) continue;
+            const raw = line.slice(6);
+            if (raw === "[DONE]") break;
+            try { const delta = JSON.parse(raw).choices?.[0]?.delta?.content; if (delta) { accumulated += delta; setChatMessages(prev => { const c = [...prev]; c[c.length - 1] = { ...c[c.length - 1], content: accumulated }; return c; }); } } catch { /* ignore */ }
+          }
+        }
+      } catch (e) {
+        setChatMessages(prev => [...prev, { role: "assistant", content: `خطا: ${(e as Error).message}`, ts: Date.now() }]);
+      } finally { setLoading(false); }
+    };
+
+    const QUICK_QS = [
+      "کدام آگهی‌دهنده‌ها سهم یکتانت زیر ۳۰٪ دارند؟",
+      "وضعیت تپسل در بازار چطوره؟",
+      "لیدهای اصلی امروز کدامند؟",
+      "کدام صنایع بیشترین سشن دارند؟",
+      "تیم با بیشترین سهم یکتانت کدومه؟",
+      "آگهی‌دهنده‌هایی که آپارات استفاده می‌کنند؟",
+    ];
+
+    return (
+      <div style={{ display: "flex", flexDirection: "column", height: "calc(100vh - 120px)" }}>
+        {/* Header */}
+        <div className="fu" style={{ background: D.card, border: `1px solid ${D.border}`, borderRadius: 16, padding: "14px 20px", marginBottom: 14, display: "flex", alignItems: "center", gap: 14, flexShrink: 0 }}>
+          <div style={{ width: 40, height: 40, borderRadius: 11, background: D.accentDim, border: `1px solid ${D.accentBrd}`, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke={D.accent} strokeWidth="1.8"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>
+          </div>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontSize: 15, fontWeight: 700, color: D.t1 }}>دستیار هوشمند Radar</div>
+            <div style={{ fontSize: 11, color: D.t3, marginTop: 1 }}>{csvData ? `${csvData.rows.length.toLocaleString()} ردیف داده بارگذاری شده · Claude ${MODEL.split("/")[1]}` : "داده‌ای بارگذاری نشده"}</div>
+          </div>
+          {chatMessages.length > 0 && (
+            <button onClick={() => setChatMessages([])} style={{ padding: "5px 12px", borderRadius: 8, border: `1px solid ${D.border}`, background: "transparent", color: D.t3, fontSize: 11, cursor: "pointer", fontFamily: "Vazirmatn,sans-serif" }}>پاک کردن مکالمه</button>
+          )}
+        </div>
+
+        {/* Messages area */}
+        <div style={{ flex: 1, overflowY: "auto", display: "flex", flexDirection: "column", gap: 10, paddingBottom: 6 }}>
+          {chatMessages.length === 0 ? (
+            <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: "100%", gap: 20, textAlign: "center" }}>
+              <svg width="52" height="52" viewBox="0 0 24 24" fill="none" stroke={D.accent} strokeWidth="1.2" opacity=".5"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>
+              <div>
+                <div style={{ fontSize: 17, fontWeight: 700, color: D.t1, marginBottom: 6 }}>از داده‌هات بپرس</div>
+                <div style={{ fontSize: 12, color: D.t3 }}>سوال‌هات رو به فارسی بنویس — من آماده پاسخ دادنم</div>
+              </div>
+              {!csvData && <div style={{ fontSize: 12, color: D.amber, background: D.amberDim, border: `1px solid ${D.amberBrd}`, borderRadius: 10, padding: "9px 16px" }}>برای استفاده از دستیار، ابتدا یک فایل داده بارگذاری کنید</div>}
+              {csvData && (
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 8, justifyContent: "center", maxWidth: 520 }}>
+                  {QUICK_QS.map((q, i) => (
+                    <button key={i} onClick={() => send(q)} style={{ padding: "7px 13px", borderRadius: 20, border: `1px solid ${D.border}`, background: D.card, color: D.t2, fontSize: 12, cursor: "pointer", fontFamily: "Vazirmatn,sans-serif", transition: "all .14s" }}
+                      onMouseEnter={e => (e.currentTarget as HTMLElement).style.borderColor = D.accentBrd}
+                      onMouseLeave={e => (e.currentTarget as HTMLElement).style.borderColor = D.border}>{q}</button>
+                  ))}
+                </div>
+              )}
+            </div>
+          ) : (
+            chatMessages.map((m, i) => (
+              <div key={i} className="fu" style={{ display: "flex", justifyContent: m.role === "user" ? "flex-start" : "flex-end", animationDelay: "0ms" }}>
+                <div style={{ maxWidth: "78%", background: m.role === "user" ? D.accentDim : D.card, border: `1px solid ${m.role === "user" ? D.accentBrd : D.border}`, borderRadius: m.role === "user" ? "16px 4px 16px 16px" : "4px 16px 16px 16px", padding: "10px 14px" }}>
+                  {m.role === "assistant" && <div style={{ fontSize: 10, color: D.accent, marginBottom: 6, fontWeight: 600 }}>دستیار Radar</div>}
+                  <div style={{ fontSize: 13, color: D.t1, lineHeight: 2, whiteSpace: "pre-wrap", direction: "rtl" }}>{m.content || (loading && i === chatMessages.length - 1 ? "..." : "")}</div>
+                </div>
+              </div>
+            ))
+          )}
+          {loading && chatMessages[chatMessages.length - 1]?.role !== "assistant" && (
+            <div style={{ display: "flex", justifyContent: "flex-end" }}>
+              <div style={{ background: D.card, border: `1px solid ${D.border}`, borderRadius: "4px 16px 16px 16px", padding: "12px 16px", display: "flex", gap: 5, alignItems: "center" }}>
+                {[0, 1, 2].map(j => <div key={j} style={{ width: 6, height: 6, borderRadius: "50%", background: D.t3, animation: `dotPop 0.9s ${j * 0.18}s infinite` }} />)}
+              </div>
+            </div>
+          )}
+          <div ref={bottomRef} />
+        </div>
+
+        {/* Input bar */}
+        <div style={{ background: D.card, border: `1px solid ${D.border}`, borderRadius: 14, padding: "10px 14px", display: "flex", gap: 10, alignItems: "flex-end", marginTop: 10, flexShrink: 0 }}>
+          <textarea value={input} onChange={e => setInput(e.target.value)}
+            onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); } }}
+            placeholder="سوالت رو بنویس… (Enter برای ارسال، Shift+Enter برای خط جدید)"
+            rows={1}
+            style={{ flex: 1, background: "transparent", border: "none", outline: "none", resize: "none", color: D.t1, fontSize: 13, lineHeight: 1.7, fontFamily: "Vazirmatn,sans-serif", minHeight: 26, maxHeight: 120, direction: "rtl", overflowY: "auto" }} />
+          <button onClick={() => send()} disabled={!input.trim() || loading}
+            style={{ width: 36, height: 36, borderRadius: 10, border: "none", background: input.trim() && !loading ? D.accent : D.border, color: "#fff", cursor: input.trim() && !loading ? "pointer" : "default", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, transition: "background .14s" }}>
+            {loading
+              ? <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ animation: "spin 0.8s linear infinite" }}><circle cx="12" cy="12" r="10" strokeDasharray="30 70" /></svg>
+              : <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+            }
+          </button>
+        </div>
+      </div>
+    );
+  };
+
   const tokens = useMemo(() => makeTokens(isDark), [isDark]);
 
   const topbarYktShare = useMemo<number | null>(() => {
@@ -3080,6 +3338,7 @@ export default function App() {
             {screen === "brief" && <BriefScreen />}
             {screen === "explorer" && <ExplorerScreen />}
             {screen === "profile" && <AdvertiserProfileScreen />}
+            {screen === "chat" && <ChatScreen />}
             {screen === "reports" && <ReportsScreen />}
             {screen === "history" && <HistoryScreen />}
             {screen === "settings" && <SettingsScreen />}
