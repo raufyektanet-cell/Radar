@@ -715,7 +715,7 @@ function Sidebar({ screen, setScreen, isDark, setIsDark, hasResult, hasCsv, sess
   };
 
   return (
-    <div style={{ position: "fixed", right: 0, top: 0, bottom: 0, width: 200, background: D.surface, borderLeft: `1px solid ${D.border}`, display: "flex", flexDirection: "column", zIndex: 200, overflowY: "auto" }}>
+    <div className="no-print" style={{ position: "fixed", right: 0, top: 0, bottom: 0, width: 200, background: D.surface, borderLeft: `1px solid ${D.border}`, display: "flex", flexDirection: "column", zIndex: 200, overflowY: "auto" }}>
       {/* Logo */}
       <div style={{ padding: "18px 16px 14px", borderBottom: `1px solid ${D.border}`, flexShrink: 0 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
@@ -789,7 +789,7 @@ function Topbar({ screen, yktShare, alertCount, unsaved, onSave, setScreen }: { 
   const jalali = toJalali(new Date());
   const pageName = PAGE_NAMES[screen] || screen;
   return (
-    <div style={{ position: "fixed", top: 0, right: 200, left: 0, height: 52, display: "flex", alignItems: "center", padding: "0 24px", background: D.surface, borderBottom: `1px solid ${D.border}`, zIndex: 100, gap: 14 }}>
+    <div className="no-print" style={{ position: "fixed", top: 0, right: 200, left: 0, height: 52, display: "flex", alignItems: "center", padding: "0 24px", background: D.surface, borderBottom: `1px solid ${D.border}`, zIndex: 100, gap: 14 }}>
       {/* Breadcrumb */}
       <div style={{ display: "flex", alignItems: "center", gap: 8, flex: 1, minWidth: 0 }}>
         <span style={{ fontSize: 11, color: D.t3, fontFamily: D.mono }}>Radar</span>
@@ -2789,8 +2789,16 @@ export default function App() {
     const [searchEx, setSearchEx] = useState("");
     const [sortCol, setSortCol] = useState("sessions");
     const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
+    const [teamFilter, setTeamFilter] = useState("all");
     const [page, setPage] = useState(0);
     const PER = 15;
+
+    const teamOptions = useMemo(() => {
+      if (!csvData) return [];
+      const teams = new Set<string>();
+      csvData.rows.forEach(r => { if (r.Team) teams.add(r.Team.trim()); });
+      return [...teams].sort();
+    }, [csvData]);
 
     const allData = useMemo(() => {
       if (!csvData) return [];
@@ -2810,13 +2818,14 @@ export default function App() {
         return { ...a, yktShare, riskScore };
       });
       if (searchEx) items = items.filter(a => a.name.toLowerCase().includes(searchEx.toLowerCase()) || a.id.includes(searchEx) || a.cat1.includes(searchEx) || a.am.includes(searchEx));
+      if (teamFilter !== "all") items = items.filter(a => a.team === teamFilter);
       items.sort((a, b) => {
         const av = sortCol === "ykt" ? a.yktShare : sortCol === "risk" ? a.riskScore : a.sessions;
         const bv = sortCol === "ykt" ? b.yktShare : sortCol === "risk" ? b.riskScore : b.sessions;
         return sortDir === "desc" ? bv - av : av - bv;
       });
       return items;
-    }, [csvData, searchEx, sortCol, sortDir]);
+    }, [csvData, searchEx, sortCol, sortDir, teamFilter]);
 
     const pageData = allData.slice(page * PER, (page + 1) * PER);
     const totalPages = Math.ceil(allData.length / PER);
@@ -2859,8 +2868,13 @@ export default function App() {
             <div style={{ fontSize: 18, fontWeight: 800, color: D.t1 }}>اکسپلورر داده</div>
             <div style={{ fontSize: 11, color: D.t3, fontFamily: D.mono, marginTop: 2 }}>{allData.length} تبلیغ‌کننده</div>
           </div>
+          <select value={teamFilter} onChange={e => { setTeamFilter(e.target.value); setPage(0); }}
+            style={{ padding: "6px 10px", borderRadius: 8, border: `1px solid ${D.border2}`, background: D.card, color: teamFilter !== "all" ? D.accent : D.t2, fontSize: 12, fontFamily: "Vazirmatn,sans-serif", cursor: "pointer", outline: "none" }}>
+            <option value="all">همه تیم‌ها</option>
+            {teamOptions.map(t => <option key={t} value={t}>{t}</option>)}
+          </select>
           <input value={searchEx} onChange={e => { setSearchEx(e.target.value); setPage(0); }} placeholder="جستجو…"
-            style={{ padding: "6px 12px", borderRadius: 8, border: `1px solid ${D.border2}`, background: D.card, color: D.t1, fontSize: 12, fontFamily: "Vazirmatn,sans-serif", width: 200, outline: "none" }} />
+            style={{ padding: "6px 12px", borderRadius: 8, border: `1px solid ${D.border2}`, background: D.card, color: D.t1, fontSize: 12, fontFamily: "Vazirmatn,sans-serif", width: 160, outline: "none" }} />
           <button onClick={exportCsv} style={{ display: "flex", alignItems: "center", gap: 6, padding: "7px 14px", borderRadius: 9, border: `1px solid ${D.accentBrd}`, background: D.accentDim, color: D.accent, fontSize: 12, cursor: "pointer", fontFamily: "Vazirmatn,sans-serif" }}>
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
             خروجی CSV
@@ -2960,6 +2974,7 @@ export default function App() {
     const yktShare = totalSessions > 0 ? Math.round(totalYkt / totalSessions * 100) : 0;
     const yktColor = yktShare >= 50 ? D.accent : yktShare >= 30 ? D.amber : D.red;
     const clientColor = advColor(info.Advertiser_name || selectedAdvId);
+    const printProfile = () => window.print();
 
     // Agency breakdown across all dates
     const agencyTotals = COMP_COLS_P.map(col => ({
@@ -2996,11 +3011,17 @@ export default function App() {
 
     return (
       <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-        {/* Back */}
-        <button onClick={() => setScreen(prevScreen)} style={{ alignSelf: "flex-start", display: "flex", alignItems: "center", gap: 6, padding: "6px 14px", borderRadius: 8, border: `1px solid ${D.border}`, background: "transparent", color: D.t2, fontSize: 12, cursor: "pointer", fontFamily: "Vazirmatn,sans-serif" }}>
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="9 18 15 12 9 6"/></svg>
-          برگشت
-        </button>
+        {/* Back + Print */}
+        <div className="no-print" style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <button onClick={() => setScreen(prevScreen)} style={{ display: "flex", alignItems: "center", gap: 6, padding: "6px 14px", borderRadius: 8, border: `1px solid ${D.border}`, background: "transparent", color: D.t2, fontSize: 12, cursor: "pointer", fontFamily: "Vazirmatn,sans-serif" }}>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="9 18 15 12 9 6"/></svg>
+            برگشت
+          </button>
+          <button onClick={printProfile} title="چاپ / خروجی PDF" style={{ display: "flex", alignItems: "center", gap: 6, padding: "6px 14px", borderRadius: 8, border: `1px solid ${D.border}`, background: "transparent", color: D.t2, fontSize: 12, cursor: "pointer", fontFamily: "Vazirmatn,sans-serif" }}>
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 01-2-2v-5a2 2 0 012-2h16a2 2 0 012 2v5a2 2 0 01-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>
+            چاپ / PDF
+          </button>
+        </div>
 
         {/* Header card */}
         <div className="fu" style={{ background: D.card, border: `1px solid ${D.border}`, borderRadius: 18, padding: "24px 28px", display: "flex", alignItems: "flex-start", gap: 20 }}>
@@ -3014,6 +3035,13 @@ export default function App() {
               {info.Category_level_1 && <span style={{ fontSize: 11, background: D.accentDim, color: D.accent, border: `1px solid ${D.accentBrd}`, padding: "3px 10px", borderRadius: 20 }}>{info.Category_level_1}</span>}
               {info.Category_level_2 && <span style={{ fontSize: 11, background: D.card, color: D.t2, border: `1px solid ${D.border}`, padding: "3px 10px", borderRadius: 20 }}>{info.Category_level_2}</span>}
               {info.Team && <span style={{ fontSize: 11, background: D.card, color: D.amber, border: `1px solid ${D.border}`, padding: "3px 10px", borderRadius: 20 }}>تیم {info.Team}</span>}
+              {(() => {
+                const healthLabel = yktShare >= 60 ? "سالم" : yktShare >= 40 ? "نیاز به توجه" : "در خطر";
+                const hBg = yktShare >= 60 ? D.greenDim : yktShare >= 40 ? D.amberDim : D.redDim;
+                const hBrd = yktShare >= 60 ? D.greenBrd : yktShare >= 40 ? D.amberBrd : D.redBrd;
+                const hClr = yktShare >= 60 ? D.green : yktShare >= 40 ? D.amber : D.red;
+                return <span style={{ fontSize: 11, fontWeight: 700, background: hBg, color: hClr, border: `1px solid ${hBrd}`, padding: "3px 10px", borderRadius: 20 }}>{healthLabel}</span>;
+              })()}
             </div>
           </div>
           <div style={{ textAlign: "center", flexShrink: 0 }}>
@@ -3353,7 +3381,7 @@ ${dataContext}`;
         <Topbar screen={screen} yktShare={topbarYktShare} alertCount={alertCount} unsaved={!!(pendingSave && saveStatus !== "saved")} onSave={confirmSave} setScreen={setScreen} />
         <Sidebar screen={screen} setScreen={setScreen} isDark={isDark} setIsDark={setIsDark} hasResult={!!result} hasCsv={!!csvData} session={session} onLogout={handleLogout} alertCount={alertCount} T={tokens} />
 
-        <div style={{ marginRight: 200 }}>
+        <div className="print-main" style={{ marginRight: 200 }}>
           <div style={{ maxWidth: 1200, width: "100%", margin: "0 auto", padding: "92px 32px 80px" }}>
             {screen === "upload" && <UploadScreen />}
             {screen === "dashboard" && <DashboardScreen />}
