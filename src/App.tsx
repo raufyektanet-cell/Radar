@@ -60,17 +60,7 @@ const AGENCY_COLORS: Record<string, string> = {
   "تریبون": "#0EA5E9", "جریان": "#D946EF", "ادورج": "#22D3EE",
 };
 
-const TEMPLATES: Record<string, { label: string; desc: string }> = {
-  standard: { label: "استاندارد", desc: "پیام روزانه معمول" },
-  brief: { label: "خلاصه", desc: "فقط مهم‌ترین نکات" },
-  detailed: { label: "تفصیلی", desc: "تحلیل کامل با جزئیات" },
-};
-
-const TEMPLATE_INSTRUCTIONS: Record<string, string> = {
-  standard: "",
-  brief: "Be very concise — max 1 sentence per advertiser. Only the single most important change. IMPORTANT: You MUST still use the exact ##ADVERTISER##/##LEAD##/##END## block format — do not skip it.",
-  detailed: "Be detailed — up to 4 sentences per advertiser. Include all agencies and full trend. IMPORTANT: You MUST still use the exact ##ADVERTISER##/##LEAD##/##END## block format for every entry.",
-};
+const TEMPLATE_INSTRUCTIONS: Record<string, string> = { standard: "" };
 
 const SYSTEM_PROMPT = `You are a market intelligence analyst at Yektanet (یکتانت). You write a daily Persian briefing for sales managers.
 
@@ -229,19 +219,21 @@ function fmtMoney(n: number): string {
 
 function toJalali(date: Date): string {
   const months = ["فروردین","اردیبهشت","خرداد","تیر","مرداد","شهریور","مهر","آبان","آذر","دی","بهمن","اسفند"];
-  const gy = date.getFullYear(), gm = date.getMonth() + 1, gd = date.getDate();
-  const leap = (gy % 4 === 0 && gy % 100 !== 0) || gy % 400 === 0;
-  const gDays = [31, leap ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+  const gy = date.getFullYear() - 1600;   // offset from 1600 CE avoids integer overflow
+  const gm = date.getMonth();             // 0-indexed
+  const gd = date.getDate() - 1;
+  const leap = (((gy + 1600) % 4 === 0) && ((gy + 1600) % 100 !== 0)) || ((gy + 1600) % 400 === 0);
+  const gMonthDays = [31, leap ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
   let gDno = 365 * gy + Math.floor((gy + 3) / 4) - Math.floor((gy + 99) / 100) + Math.floor((gy + 399) / 400);
-  for (let i = 0; i < gm - 1; i++) gDno += gDays[i];
-  gDno += gd - 1;
+  for (let i = 0; i < gm; i++) gDno += gMonthDays[i];
+  gDno += gd;
   let jDno = gDno - 79;
   const jNp = Math.floor(jDno / 12053); jDno %= 12053;
   let jy = 979 + 33 * jNp + 4 * Math.floor(jDno / 1461); jDno %= 1461;
   if (jDno >= 366) { jy += Math.floor((jDno - 1) / 365); jDno = (jDno - 1) % 365; }
   const jMd = [31,31,31,31,31,31,30,30,30,30,30,29];
   let jm = 0;
-  for (; jm < 12 && jDno >= jMd[jm]; jm++) jDno -= jMd[jm];
+  for (; jm < 11 && jDno >= jMd[jm]; jm++) jDno -= jMd[jm];
   return `${jDno + 1} ${months[jm]} ${jy}`;
 }
 
@@ -850,6 +842,9 @@ export default function App() {
   const [modalAdv, setModalAdv] = useState<{ adv: Advertiser; type: string } | null>(null);
   const [toast, setToast] = useState<{ msg: string; type: "success" | "error" } | null>(null);
   const [selectedAdvId, setSelectedAdvId] = useState<string | null>(null);
+  const [prevScreen, setPrevScreen] = useState("explorer");
+
+  const goToProfile = (id: string) => { setPrevScreen(screen); setSelectedAdvId(id); setScreen("profile"); };
   const [loadingProgress, setLoadingProgress] = useState(0);
   const loadingTimer = useRef<ReturnType<typeof setInterval> | null>(null);
   const [apiKeyInput, setApiKeyInput] = useState(() => localStorage.getItem("radar:openrouter_key") || "");
@@ -1213,18 +1208,6 @@ export default function App() {
                   <p style={{ margin: "0 0 3px", fontSize: 11, color: T.text3 }}>{c.l}</p>
                   <p style={{ margin: 0, fontSize: 13, fontWeight: 600, color: T.text1, direction: "ltr", textAlign: "right" }}>{c.v}</p>
                 </div>
-              ))}
-            </div>
-          </div>
-
-          <div style={card({ padding: "14px 18px" })}>
-            <p style={{ margin: "0 0 12px", fontSize: 11, fontWeight: 600, color: T.text3, textTransform: "uppercase", letterSpacing: "0.08em" }}>قالب گزارش</p>
-            <div style={{ display: "flex", gap: 8 }}>
-              {Object.entries(TEMPLATES).map(([key, t]) => (
-                <button key={key} onClick={() => setSelectedTemplate(key)} style={{ flex: 1, padding: "10px 8px", borderRadius: 11, border: `1.5px solid ${selectedTemplate === key ? T.coral : T.border}`, background: selectedTemplate === key ? T.coralDim : "transparent", cursor: "pointer", transition: "all 0.18s" }}>
-                  <p style={{ margin: "0 0 3px", fontSize: 13, fontWeight: selectedTemplate === key ? 600 : 400, color: selectedTemplate === key ? T.coral : T.text1 }}>{t.label}</p>
-                  <p style={{ margin: 0, fontSize: 11, color: T.text3 }}>{t.desc}</p>
-                </button>
               ))}
             </div>
           </div>
@@ -1671,7 +1654,7 @@ export default function App() {
             <SectionHeader title="برترین تبلیغ‌کننده‌ها" sub="بر اساس حجم سشن"
               action={<button onClick={() => setScreen("results")} style={{ fontSize: 11, color: D.accent, background: D.accentDim, border: `1px solid ${D.accentBrd}`, borderRadius: 99, padding: "3px 10px", cursor: "pointer", fontFamily: "Vazirmatn,sans-serif" }}>همه ←</button>} />
             {top5.map((a, i) => (
-              <div key={a.name} className="fu" onClick={() => { setSelectedAdvId(a.id); setScreen("profile"); }} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 0", borderBottom: i < 4 ? `1px solid ${D.border}` : "none", animationDelay: `${i * 40}ms`, cursor: "pointer" }}>
+              <div key={a.name} className="fu" onClick={() => { goToProfile(a.id); }} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 0", borderBottom: i < 4 ? `1px solid ${D.border}` : "none", animationDelay: `${i * 40}ms`, cursor: "pointer" }}>
                 <div style={{ width: 22, height: 22, borderRadius: 6, background: D.accentDim, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, fontWeight: 800, color: D.accent, fontFamily: D.mono, flexShrink: 0 }}>{i + 1}</div>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ fontSize: 12, fontWeight: 600, color: D.t1, fontFamily: D.mono, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{a.name}</div>
@@ -1697,7 +1680,7 @@ export default function App() {
                     {atRisk.length} هشدار
                   </button>} />
                 {atRisk.map((a, i) => (
-                  <div key={a.name} className="fu" onClick={() => { setSelectedAdvId(a.id); setScreen("profile"); }} style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8, animationDelay: `${i * 40}ms`, cursor: "pointer" }}>
+                  <div key={a.name} className="fu" onClick={() => { goToProfile(a.id); }} style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8, animationDelay: `${i * 40}ms`, cursor: "pointer" }}>
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={{ fontSize: 12, fontFamily: D.mono, color: D.t1, marginBottom: 3, overflow: "hidden", textOverflow: "ellipsis" }}>{a.name}</div>
                       <Sparkline data={[...Array(7)].map((_, j) => a.yktShare - (6 - j) * 2 + Math.random() * 4)} color={D.red} w={100} h={22} />
@@ -1715,7 +1698,7 @@ export default function App() {
                     {leads.length} لید ←
                   </button>} />
                 {leads.slice(0, 4).map((a, i) => (
-                  <div key={a.name} className="fu" onClick={() => { setSelectedAdvId(a.id); setScreen("profile"); }} style={{ display: "flex", alignItems: "center", gap: 10, padding: "7px 0", borderBottom: i < 3 ? `1px solid ${D.border}` : "none", animationDelay: `${i * 40}ms`, cursor: "pointer" }}>
+                  <div key={a.name} className="fu" onClick={() => { goToProfile(a.id); }} style={{ display: "flex", alignItems: "center", gap: 10, padding: "7px 0", borderBottom: i < 3 ? `1px solid ${D.border}` : "none", animationDelay: `${i * 40}ms`, cursor: "pointer" }}>
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={{ fontSize: 12, fontFamily: D.mono, color: D.t1, overflow: "hidden", textOverflow: "ellipsis" }}>{a.name}</div>
                       <div style={{ fontSize: 10, color: D.t3, marginTop: 2 }}>{a.industry}</div>
@@ -2218,7 +2201,9 @@ export default function App() {
         {sorted.length === 0 ? (
           <div style={{ textAlign: "center", padding: "4rem", color: D.t3, fontSize: 13 }}>لیدی با این فیلتر یافت نشد</div>
         ) : sorted.map((a, i) => (
-          <div key={a.name} className="fu" style={{ animationDelay: `${i * 30}ms`, background: D.card, border: `1px solid ${D.border}`, borderRadius: 13, padding: "14px 16px" }}>
+          <div key={a.name} className="fu" onClick={() => goToProfile(a.id)} style={{ animationDelay: `${i * 30}ms`, background: D.card, border: `1px solid ${D.border}`, borderRadius: 13, padding: "14px 16px", cursor: "pointer" }}
+            onMouseEnter={e => (e.currentTarget as HTMLElement).style.border = `1px solid ${D.accentBrd}`}
+            onMouseLeave={e => (e.currentTarget as HTMLElement).style.border = `1px solid ${D.border}`}>
             <div style={{ display: "flex", alignItems: "flex-start", gap: 12 }}>
               <div style={{ width: 46, height: 46, borderRadius: 12, background: a.priority === "high" ? D.redDim : a.priority === "medium" ? D.amberDim : D.border, border: `1px solid ${a.priority === "high" ? D.redBrd : a.priority === "medium" ? D.amberBrd : D.border}`, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
                 <div style={{ textAlign: "center" }}>
@@ -2370,7 +2355,7 @@ export default function App() {
               <button onClick={() => setSelInd(null)} style={{ background: "none", border: "none", cursor: "pointer", color: D.t3, fontSize: 18, lineHeight: 1, padding: "0 4px" }}>×</button>
             </div>
             {indAdvs.map((a, i) => (
-              <div key={a.id} onClick={() => { setSelectedAdvId(a.id); setScreen("profile"); }}
+              <div key={a.id} onClick={() => { goToProfile(a.id); }}
                 style={{ padding: "12px 20px", borderBottom: i < indAdvs.length - 1 ? `1px solid ${D.border}` : "none", display: "flex", alignItems: "center", gap: 14, cursor: "pointer", transition: "background .12s" }}
                 onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = D.cardHov}
                 onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = "transparent"}>
@@ -2419,6 +2404,8 @@ export default function App() {
       cur.ykt += Number(r.Yektanet) || 0;
       if (id) cur.advertisers.add(id);
       if (r.Account_manager_name) cur.members.add(r.Account_manager_name);
+      if (r.Performance_manager_name) cur.members.add(r.Performance_manager_name);
+      if (r.Supervisor_name) cur.members.add(r.Supervisor_name);
       teamMap2.set(team, cur);
     });
     const teamColors = [D.accent, D.blue, D.green, D.amber, D.t2];
@@ -2487,7 +2474,7 @@ export default function App() {
             <div style={{ background: D.card, border: `1px solid ${D.border}`, borderRadius: 14, padding: "16px 20px" }}>
               <SectionHeader title="تبلیغ‌کننده‌های این تیم" />
               {selTeamAdvs.map((a, i) => (
-                <div key={a.name} onClick={() => { setSelectedAdvId(a.id); setScreen("profile"); }} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 0", borderBottom: i < selTeamAdvs.length - 1 ? `1px solid ${D.border}` : "none", cursor: "pointer" }}
+                <div key={a.name} onClick={() => { goToProfile(a.id); }} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 0", borderBottom: i < selTeamAdvs.length - 1 ? `1px solid ${D.border}` : "none", cursor: "pointer" }}
                   onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = D.cardHov}
                   onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = "transparent"}>
                   <div style={{ flex: 1, minWidth: 0 }}>
@@ -2513,25 +2500,25 @@ export default function App() {
     const generatedAlerts = useMemo(() => {
       if (!csvData) return [];
       const rows = csvData.rows;
-      const advSet3 = new Map<string, { name: string; sessions: number; ykt: number; am: string; cat1: string }>();
+      const advSet3 = new Map<string, { id: string; name: string; sessions: number; ykt: number; am: string; cat1: string }>();
       rows.forEach(r => {
         const id = (r.Owner_id || r.Advertiser_name || "").trim();
         if (!id) return;
-        const cur = advSet3.get(id) || { name: r.Advertiser_name || id, sessions: 0, ykt: 0, am: r.Account_manager_name || "", cat1: r.Category_level_1 || "" };
+        const cur = advSet3.get(id) || { id, name: r.Advertiser_name || id, sessions: 0, ykt: 0, am: r.Account_manager_name || "", cat1: r.Category_level_1 || "" };
         cur.sessions += Number(r.Total_sessions) || 0;
         cur.ykt += Number(r.Yektanet) || 0;
         advSet3.set(id, cur);
       });
-      const alerts: { id: string; advertiser: string; msg: string; severity: "critical" | "high" | "medium" | "info"; type: "decline" | "lead" | "competitor" | "growth"; read: boolean; time: string }[] = [];
+      const alerts: { id: string; advId: string; advertiser: string; msg: string; severity: "critical" | "high" | "medium" | "info"; type: "decline" | "lead" | "competitor" | "growth"; read: boolean; time: string }[] = [];
       let idx = 0;
       [...advSet3.values()].forEach(a => {
         const yktPct = a.sessions > 0 ? Math.round(a.ykt / a.sessions * 100) : 0;
         if (a.ykt === 0 && a.sessions > 5000) {
-          alerts.push({ id: String(idx++), advertiser: a.name, msg: `حجم سشن ${formatNumber(a.sessions)} — بدون حضور یکتانت. فرصت لید.`, severity: a.sessions > 30000 ? "critical" : "high", type: "lead", read: false, time: "امروز" });
+          alerts.push({ id: String(idx++), advId: a.id, advertiser: a.name, msg: `حجم سشن ${formatNumber(a.sessions)} — بدون حضور یکتانت. فرصت لید.`, severity: a.sessions > 30000 ? "critical" : "high", type: "lead", read: false, time: "امروز" });
         } else if (yktPct < 25 && a.sessions > 10000) {
-          alerts.push({ id: String(idx++), advertiser: a.name, msg: `سهم یکتانت ${yktPct}٪ — بسیار پایین. رقبا در حال افزایش سهم.`, severity: "critical", type: "decline", read: false, time: "امروز" });
+          alerts.push({ id: String(idx++), advId: a.id, advertiser: a.name, msg: `سهم یکتانت ${yktPct}٪ — بسیار پایین. رقبا در حال افزایش سهم.`, severity: "critical", type: "decline", read: false, time: "امروز" });
         } else if (yktPct < 40 && a.sessions > 5000) {
-          alerts.push({ id: String(idx++), advertiser: a.name, msg: `سهم یکتانت ${yktPct}٪ — در خطر از دست دادن سهم بیشتر.`, severity: "high", type: "decline", read: false, time: "امروز" });
+          alerts.push({ id: String(idx++), advId: a.id, advertiser: a.name, msg: `سهم یکتانت ${yktPct}٪ — در خطر از دست دادن سهم بیشتر.`, severity: "high", type: "decline", read: false, time: "امروز" });
         }
       });
       return alerts.sort((a, b) => (b.severity === "critical" ? 1 : 0) - (a.severity === "critical" ? 1 : 0)).slice(0, 30);
@@ -2583,7 +2570,7 @@ export default function App() {
               </div>
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4, flexWrap: "wrap" }}>
-                  <span style={{ fontSize: 12, fontWeight: 700, color: D.t1, fontFamily: D.mono }}>{al.advertiser}</span>
+                  <span onClick={() => goToProfile(al.advId)} style={{ fontSize: 12, fontWeight: 700, color: D.accent, fontFamily: D.mono, cursor: "pointer", textDecoration: "underline" }}>{al.advertiser}</span>
                   <Badge label={al.severity === "critical" ? "بحرانی" : al.severity === "high" ? "بالا" : al.severity === "medium" ? "متوسط" : "اطلاع"} color={severityColor[al.severity]} />
                   {!al.read && <div style={{ width: 6, height: 6, borderRadius: "50%", background: D.accent }} />}
                 </div>
@@ -2820,7 +2807,7 @@ export default function App() {
         <div style={{ display: "flex", flexDirection: "column" }}>
           {pageData.map((a, i) => (
             <div key={a.id} style={{ display: "grid", gridTemplateColumns: cols.map(c => c.w).join(" "), gap: 8, alignItems: "center", height: 40, borderBottom: `1px solid ${D.border}`, transition: "background .1s", cursor: "pointer" }}
-              onClick={() => { setSelectedAdvId(a.id); setScreen("profile"); }}
+              onClick={() => { goToProfile(a.id); }}
               onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = D.cardHov}
               onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = "transparent"}>
               <div style={{ fontSize: 11, fontFamily: D.mono, color: D.t1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{a.name}</div>
@@ -2915,7 +2902,7 @@ export default function App() {
     return (
       <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
         {/* Back */}
-        <button onClick={() => window.history.back()} style={{ alignSelf: "flex-start", display: "flex", alignItems: "center", gap: 6, padding: "6px 14px", borderRadius: 8, border: `1px solid ${D.border}`, background: "transparent", color: D.t2, fontSize: 12, cursor: "pointer", fontFamily: "Vazirmatn,sans-serif" }}>
+        <button onClick={() => setScreen(prevScreen)} style={{ alignSelf: "flex-start", display: "flex", alignItems: "center", gap: 6, padding: "6px 14px", borderRadius: 8, border: `1px solid ${D.border}`, background: "transparent", color: D.t2, fontSize: 12, cursor: "pointer", fontFamily: "Vazirmatn,sans-serif" }}>
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="9 18 15 12 9 6"/></svg>
           برگشت
         </button>
