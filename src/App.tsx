@@ -16,19 +16,18 @@ function makeTokens(isDark: boolean) {
   const a = "#D4623A", ar = "212,98,58";
   if (isDark) return {
     bg: "#070B12", bgDeep: "#040709", surface: "#0D1420", card: "#111927", cardHov: "#161F30",
-    border: "rgba(255,255,255,.06)", border2: "rgba(255,255,255,.11)", border3: "rgba(255,255,255,.18)",
-    accent: a, accentDim: `rgba(${ar},.12)`, accentBrd: `rgba(${ar},.28)`, accentGlow: `rgba(${ar},.4)`, accentHov: "#C45530",
-    green: "#1DB87E", greenDim: "rgba(29,184,126,.12)", greenBrd: "rgba(29,184,126,.28)",
-    amber: "#D97B2A", amberDim: "rgba(217,123,42,.12)", amberBrd: "rgba(217,123,42,.28)",
-    red: "#E05252", redDim: "rgba(224,82,82,.12)", redBrd: "rgba(224,82,82,.28)",
-    blue: "#4A8EDB", blueDim: "rgba(74,142,219,.12)",
-    t1: "#EEF2FF", t2: "rgba(238,242,255,.60)", t3: "rgba(238,242,255,.32)", t4: "rgba(238,242,255,.14)",
+    border: "rgba(255,255,255,.08)", border2: "rgba(255,255,255,.14)", border3: "rgba(255,255,255,.22)",
+    accent: a, accentDim: `rgba(${ar},.15)`, accentBrd: `rgba(${ar},.32)`, accentGlow: `rgba(${ar},.4)`, accentHov: "#C45530",
+    green: "#1DB87E", greenDim: "rgba(29,184,126,.14)", greenBrd: "rgba(29,184,126,.32)",
+    amber: "#E08B35", amberDim: "rgba(224,139,53,.14)", amberBrd: "rgba(224,139,53,.32)",
+    red: "#E05252", redDim: "rgba(224,82,82,.14)", redBrd: "rgba(224,82,82,.32)",
+    blue: "#4A8EDB", blueDim: "rgba(74,142,219,.14)",
+    t1: "#F0F4FF", t2: "rgba(240,244,255,.75)", t3: "rgba(240,244,255,.48)", t4: "rgba(240,244,255,.20)",
     mono: "'JetBrains Mono', monospace",
-    // legacy aliases kept for upload/login/modal screens
-    surface2: "#0D1420", text1: "#EEF2FF", text2: "rgba(238,242,255,.60)", text3: "rgba(238,242,255,.32)",
-    coral: a, coralDim: `rgba(${ar},.12)`, coralBorder: `rgba(${ar},.28)`,
-    greenBorder: "rgba(29,184,126,.28)", amberBorder: "rgba(217,123,42,.28)",
-    danger: "#E05252", dangerBg: "rgba(224,82,82,.10)", dangerBorder: "rgba(224,82,82,.28)",
+    surface2: "#0D1420", text1: "#F0F4FF", text2: "rgba(240,244,255,.75)", text3: "rgba(240,244,255,.48)",
+    coral: a, coralDim: `rgba(${ar},.15)`, coralBorder: `rgba(${ar},.32)`,
+    greenBorder: "rgba(29,184,126,.32)", amberBorder: "rgba(224,139,53,.32)",
+    danger: "#E05252", dangerBg: "rgba(224,82,82,.12)", dangerBorder: "rgba(224,82,82,.32)",
   };
   return {
     bg: "#F5F2ED", bgDeep: "#EDE8DF", surface: "#FFFFFF", card: "#FFFFFF", cardHov: "#FAF7F2",
@@ -277,7 +276,8 @@ function downloadHTML(result: AnalysisResult) {
 const GLOBAL_CSS = `
 @import url('https://fonts.googleapis.com/css2?family=Vazirmatn:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600;700&display=swap');
 *{box-sizing:border-box;margin:0;padding:0}
-html,body{overflow-y:auto;overflow-x:hidden}
+html,body{overflow-y:auto;overflow-x:hidden;font-family:'Vazirmatn',system-ui,sans-serif}
+button,input,select,textarea{font-family:'Vazirmatn',system-ui,sans-serif}
 @keyframes fu{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
 @keyframes fadeUp{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:translateY(0)}}
 @keyframes radarSweep{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}
@@ -289,6 +289,14 @@ html,body{overflow-y:auto;overflow-x:hidden}
 @keyframes slideInModal{from{opacity:0;transform:translateY(-14px) scale(.97)}to{opacity:1;transform:translateY(0) scale(1)}}
 .fu{animation:fu .3s ease both}
 `;
+
+// Derive a stable brand color per advertiser from their name
+function advColor(name: string): string {
+  const palette = ["#D4623A","#3B82F6","#8B5CF6","#10B981","#F59E0B","#EF4444","#14B8A6","#6366F1","#EC4899","#06B6D4","#84CC16","#F97316"];
+  let h = 0;
+  for (let i = 0; i < name.length; i++) h = (Math.imul(h, 31) + name.charCodeAt(i)) | 0;
+  return palette[Math.abs(h) % palette.length];
+}
 
 // ── Shared UI Components v2 ───────────────────────────────────────────────────
 
@@ -390,6 +398,56 @@ function AgencyLegend({ agencies, compact = false }: { agencies: Agency[]; compa
           {a.name} {Math.round(a.value / total * 100)}٪
         </span>
       ))}
+    </div>
+  );
+}
+
+// Daily stacked bar chart — shows sessions per agency per day
+function StackedBarsChart({ days, activeAgencies }: {
+  days: { date: string; ykt: number; comps: { name: string; value: number; color: string }[] }[];
+  activeAgencies: { name: string; color: string }[];
+}) {
+  const D = useD();
+  if (days.length === 0) return null;
+  const maxTotal = Math.max(...days.map(d => d.ykt + d.comps.reduce((s, c) => s + c.value, 0)), 1);
+  const barW = Math.max(10, Math.min(28, Math.floor(640 / days.length) - 3));
+  return (
+    <div>
+      <div style={{ display: "flex", alignItems: "flex-end", gap: 3, height: 100, overflowX: "auto", paddingBottom: 4 }}>
+        {days.map((d, i) => {
+          const total = d.ykt + d.comps.reduce((s, c) => s + c.value, 0);
+          const segs: { color: string; h: number }[] = [];
+          if (d.ykt > 0) segs.push({ color: AGENCY_COLORS["یکتانت"] || "#D4623A", h: Math.max(1, Math.round(d.ykt / maxTotal * 96)) });
+          d.comps.forEach(c => { if (c.value > 0) segs.push({ color: c.color, h: Math.max(1, Math.round(c.value / maxTotal * 96)) }); });
+          return (
+            <div key={i} title={`${d.date.slice(5)}: ${formatNumber(total)} سشن`}
+              style={{ flexShrink: 0, width: barW, display: "flex", flexDirection: "column-reverse", alignItems: "stretch", gap: 1 }}>
+              {segs.map((s, j) => (
+                <div key={j} style={{ height: s.h, background: s.color, borderRadius: j === segs.length - 1 ? "2px 2px 0 0" : 0 }} />
+              ))}
+            </div>
+          );
+        })}
+      </div>
+      {/* X-axis labels */}
+      <div style={{ display: "flex", gap: 3, overflowX: "hidden" }}>
+        {days.map((d, i) => (
+          <div key={i} style={{ flexShrink: 0, width: barW, textAlign: "center", fontSize: 8, color: D.t3, fontFamily: D.mono, overflow: "hidden" }}>
+            {i % Math.max(1, Math.floor(days.length / 7)) === 0 ? d.date.slice(5) : ""}
+          </div>
+        ))}
+      </div>
+      {/* Legend */}
+      {activeAgencies.length > 0 && (
+        <div style={{ display: "flex", flexWrap: "wrap", gap: "6px 12px", marginTop: 10 }}>
+          {activeAgencies.map(ag => (
+            <span key={ag.name} style={{ fontSize: 10, color: D.t2, display: "flex", alignItems: "center", gap: 4 }}>
+              <span style={{ width: 8, height: 8, borderRadius: 2, background: ag.color, display: "inline-block" }} />
+              {ag.name}
+            </span>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -2871,6 +2929,7 @@ export default function App() {
     const totalYkt = advRows.reduce((s, r) => s + (Number(r.Yektanet) || 0), 0);
     const yktShare = totalSessions > 0 ? Math.round(totalYkt / totalSessions * 100) : 0;
     const yktColor = yktShare >= 50 ? D.accent : yktShare >= 30 ? D.amber : D.red;
+    const clientColor = advColor(info.Advertiser_name || selectedAdvId);
 
     // Agency breakdown across all dates
     const agencyTotals = COMP_COLS_P.map(col => ({
@@ -2880,24 +2939,30 @@ export default function App() {
     })).filter(a => a.value > 0).sort((a, b) => b.value - a.value);
     const grandTotal = totalYkt + agencyTotals.reduce((s, a) => s + a.value, 0);
 
-    // Daily trend
-    const dailyMap = new Map<string, { total: number; ykt: number }>();
+    // Daily trend + per-day agency breakdown for stacked chart
+    const stackedDayMap = new Map<string, { total: number; ykt: number; comps: Record<string, number> }>();
     advRows.forEach(r => {
       const d = r.Date || ""; if (!d) return;
-      const cur = dailyMap.get(d) || { total: 0, ykt: 0 };
+      const cur = stackedDayMap.get(d) || { total: 0, ykt: 0, comps: {} };
       cur.total += Number(r.Total_sessions) || 0;
       cur.ykt += Number(r.Yektanet) || 0;
-      dailyMap.set(d, cur);
+      COMP_COLS_P.forEach(c => { cur.comps[c] = (cur.comps[c] || 0) + (Number(r[c]) || 0); });
+      stackedDayMap.set(d, cur);
     });
-    const trend = [...dailyMap.entries()].sort((a, b) => a[0].localeCompare(b[0])).map(([date, { total, ykt }]) => ({
+    const trend = [...stackedDayMap.entries()].sort((a, b) => a[0].localeCompare(b[0])).map(([date, { total, ykt, comps }]) => ({
       date, total, share: total > 0 ? Math.round(ykt / total * 100) : 0,
+      ykt,
+      comps: COMP_COLS_P.map(c => ({ name: TR_COMP_P[c] || c, value: comps[c] || 0, color: AGENCY_COLORS[TR_COMP_P[c] || c] || "#888" })).filter(x => x.value > 0),
     }));
+    // Active agencies for legend (those with at least one day of data)
+    const activeAgencies = [
+      { name: "یکتانت", color: AGENCY_COLORS["یکتانت"] || "#D4623A" },
+      ...agencyTotals.map(a => ({ name: a.name, color: a.color })),
+    ];
 
     // AI result for this advertiser if analysis was run
     const aiAdv = result?.advertisers.find(a => a.ownerid === selectedAdvId || a.name === info.Advertiser_name)
       || result?.leads.find(l => l.ownerid === selectedAdvId || l.name === info.Advertiser_name);
-
-    const backTarget = window.history.length > 1 ? null : "explorer";
 
     return (
       <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
@@ -2909,8 +2974,8 @@ export default function App() {
 
         {/* Header card */}
         <div className="fu" style={{ background: D.card, border: `1px solid ${D.border}`, borderRadius: 18, padding: "24px 28px", display: "flex", alignItems: "flex-start", gap: 20 }}>
-          <div style={{ width: 64, height: 64, borderRadius: 18, background: D.accentDim, border: `1px solid ${D.accentBrd}`, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-            <span style={{ fontSize: 26, fontFamily: D.mono, fontWeight: 900, color: D.accent }}>{(info.Advertiser_name || "?")[0].toUpperCase()}</span>
+          <div style={{ width: 64, height: 64, borderRadius: 18, background: clientColor + "22", border: `1px solid ${clientColor}44`, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+            <span style={{ fontSize: 26, fontFamily: D.mono, fontWeight: 900, color: clientColor }}>{(info.Advertiser_name || "?")[0].toUpperCase()}</span>
           </div>
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ fontSize: 22, fontWeight: 800, color: D.t1, letterSpacing: "-.4px" }}>{info.Advertiser_name}</div>
@@ -2960,6 +3025,14 @@ export default function App() {
                 </div>
               ))}
             </div>
+          </div>
+        )}
+
+        {/* Daily stacked agency chart */}
+        {trend.length > 1 && (
+          <div className="fu" style={{ background: D.card, border: `1px solid ${D.border}`, borderRadius: 16, padding: "18px 20px" }}>
+            <SectionHeader title="توزیع روزانه آژانس‌ها" sub={`${trend.length} روز`} />
+            <StackedBarsChart days={trend} activeAgencies={activeAgencies} />
           </div>
         )}
 
