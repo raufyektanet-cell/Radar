@@ -4,7 +4,6 @@ import { TEAMS, ADMIN_USER, type SessionUser } from "./teams";
 
 const MODEL = "anthropic/claude-sonnet-4-5";
 const OPENROUTER_KEY = import.meta.env.VITE_OPENROUTER_KEY as string | undefined;
-const HISTORY_KEY = "analyzer:reported_advertisers";
 const REPORTS_KEY = "analyzer:saved_reports";
 const THEME_KEY = "analyzer:theme";
 const SESSION_KEY = "radar:session";
@@ -241,7 +240,6 @@ function toJalali(date: Date): string {
 interface Advertiser { name: string; ownerid: string; manager: string; performanceManager?: string; supervisor?: string; team?: string; summary?: string; note?: string; agencies: Agency[]; industry1?: string; industry2?: string; }
 interface Competitor { platform: string; newclients: string; topclients: string; note: string; }
 interface AnalysisResult { dateLabel: string; advertisers: Advertiser[]; leads: Advertiser[]; competitors: Competitor[]; market: string; disclaimer: string; id?: string; savedAt?: number; }
-interface HistoryEntry { date: string; dateLabel: string; names: string[]; }
 
 function buildMessage(result: AnalysisResult): string {
   let msg = `🟥 از مارکت چه خبر؟ ${result.dateLabel}\n`;
@@ -699,7 +697,7 @@ const PAGE_NAMES: Record<string, string> = {
   competitor: "بررسی رقبا", marketmap: "نقشه بازار", trends: "تحلیل روند",
   leads: "لید پایپلاین", profile: "پروفایل", industry: "تحلیل صنایع",
   team: "عملکرد تیم", alerts: "مرکز هشدار", brief: "خلاصه هفتگی",
-  explorer: "اکسپلورر داده", reports: "گزارش‌ها", history: "تاریخچه", settings: "تنظیمات", chat: "دستیار هوشمند",
+  explorer: "اکسپلورر داده", reports: "گزارش‌ها", settings: "تنظیمات", chat: "دستیار هوشمند",
 };
 
 function Sidebar({ screen, setScreen, isDark, setIsDark, hasResult, hasCsv, session, onLogout, alertCount, T }: {
@@ -864,7 +862,6 @@ export default function App() {
   const [errMsg, setErrMsg] = useState("");
   const [rawDebug, setRawDebug] = useState("");
   const [showDebug, setShowDebug] = useState(false);
-  const [history, setHistory] = useState<HistoryEntry[]>([]);
   const [savedReports, setSavedReports] = useState<AnalysisResult[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
   const [filterAgency, setFilterAgency] = useState("all");
@@ -884,28 +881,18 @@ export default function App() {
   const [showApiKeyInput, setShowApiKeyInput] = useState(false);
   const hasApiKey = !!(OPENROUTER_KEY || localStorage.getItem("radar:openrouter_key"));
 
-  useEffect(() => { loadHistory(); loadReports(); }, []);
+  useEffect(() => { loadReports(); }, []);
 
   const showToast = (msg: string, type: "success" | "error" = "success") => {
     setToast({ msg, type });
   };
 
-  const loadHistory = () => {
-    try { const r = localStorage.getItem(HISTORY_KEY); if (r) setHistory(JSON.parse(r)); } catch { setHistory([]); }
-  };
   const loadReports = () => {
     try { const r = localStorage.getItem(REPORTS_KEY); if (r) setSavedReports(JSON.parse(r)); } catch { setSavedReports([]); }
-  };
-  const persistHistory = (u: HistoryEntry[]) => {
-    if (u.length === 0) localStorage.removeItem(HISTORY_KEY);
-    else localStorage.setItem(HISTORY_KEY, JSON.stringify(u));
-    setHistory(u);
   };
   const confirmSave = () => {
     if (!pendingSave) return;
     try {
-      const u = [...history.filter(h => h.date !== pendingSave.date), pendingSave].slice(-5);
-      persistHistory(u);
       const rep: AnalysisResult = { ...result!, savedAt: Date.now(), id: pendingSave.date };
       const reps = [...savedReports.filter(r => r.id !== rep.id), rep].slice(-10);
       localStorage.setItem(REPORTS_KEY, JSON.stringify(reps)); setSavedReports(reps);
@@ -913,10 +900,6 @@ export default function App() {
       showToast("گزارش ذخیره شد ✓");
     } catch { showToast("خطا در ذخیره", "error"); }
   };
-  const deleteHistoryEntry = (date: string) => { try { persistHistory(history.filter(h => h.date !== date)); } catch { } };
-  const clearHistory = () => { try { persistHistory([]); } catch { } };
-  const uniqueReported = [...new Set(history.flatMap(h => h.names))];
-
   const handleFile = useCallback((file: File) => {
     if (!file) return;
     readFile(file, (rows, csvText) => { setCsvData({ text: csvText, rows, name: file.name, stats: getStats(rows) }); setStep("ready"); setErrMsg(""); }, () => setErrMsg("خطا در خواندن فایل."));
@@ -936,7 +919,6 @@ export default function App() {
   const runAnalysis = async (csvText: string, rows: Record<string, string>[], template = "standard", extra = ""): Promise<AnalysisResult> => {
     const managerMap = buildManagerMap(rows);
     const preview = csvText.length > 15000 ? csvText.slice(0, 15000) + "\n...truncated" : csvText;
-    const prevBlock = uniqueReported.length > 0 ? `\n\nPREVIOUSLY REPORTED (skip unless new):\n${uniqueReported.join(", ")}` : "";
     const tmplInstr = TEMPLATE_INSTRUCTIONS[template] ? `\nTEMPLATE: ${TEMPLATE_INSTRUCTIONS[template]}` : "";
     const extraInstr = extra ? `\nADDITIONAL: ${extra}` : "";
     const apiKey = OPENROUTER_KEY || localStorage.getItem("radar:openrouter_key") || "";
@@ -948,7 +930,7 @@ export default function App() {
         "Authorization": `Bearer ${apiKey}`,
         "HTTP-Referer": "https://raufyektanet-cell.github.io/Radar/",
       },
-      body: JSON.stringify({ model: MODEL, max_tokens: 4000, stream: true, messages: [{ role: "system", content: SYSTEM_PROMPT }, { role: "user", content: `Data:\n\n${preview}${prevBlock}${tmplInstr}${extraInstr}\n\nToday is ${todayLabel()}. Start with ##. No preamble.` }] })
+      body: JSON.stringify({ model: MODEL, max_tokens: 4000, stream: true, messages: [{ role: "system", content: SYSTEM_PROMPT }, { role: "user", content: `Data:\n\n${preview}${tmplInstr}${extraInstr}\n\nToday is ${todayLabel()}. Start with ##. No preamble.` }] })
     });
     if (!resp.ok) throw new Error(`HTTP ${resp.status}: ${await resp.text().catch(() => "")}`);
     const reader = resp.body!.getReader();
@@ -1197,12 +1179,6 @@ export default function App() {
                 <button onClick={() => setShowApiKeyInput(false)} style={{ padding: "10px 14px", borderRadius: 10, border: `1px solid ${T.border}`, background: "transparent", color: T.text2, fontSize: 13, cursor: "pointer", fontFamily: "Vazirmatn,sans-serif" }}>لغو</button>
               </div>
               <p style={{ margin: "8px 0 0", fontSize: 11, color: T.text3 }}>کلید از <span style={{ direction: "ltr", display: "inline-block" }}>openrouter.ai/keys</span> دریافت می‌شود و فقط در مرورگر شما ذخیره می‌شود</p>
-            </div>
-          )}
-          {uniqueReported.length > 0 && (
-            <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 14px", background: T.coralDim, border: `1px solid ${T.coralBorder}`, borderRadius: 12 }}>
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke={T.coral} strokeWidth="2"><circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" /></svg>
-              <p style={{ margin: 0, fontSize: 12, color: T.coral }}>{uniqueReported.length} تبلیغ‌کننده از ۵ روز اخیر skip می‌شن</p>
             </div>
           )}
         </>
@@ -1502,33 +1478,6 @@ export default function App() {
                 </div>
               );
             })}
-          </div>
-        ))}
-    </div>
-  );
-
-  // ─ History screen ────────────────────────────────────────────────────────────
-  const HistoryScreen = () => (
-    <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-        <p style={{ margin: 0, fontSize: 17, fontWeight: 700, color: T.text1 }}>تبلیغ‌کننده‌های گزارش‌شده</p>
-        {history.length > 0 && <button onClick={clearHistory} style={btnStyle({ color: T.danger, borderColor: T.dangerBorder })}>پاک کردن همه</button>}
-      </div>
-      {history.length === 0
-        ? <div style={{ textAlign: "center", padding: "4rem", color: T.text3, fontSize: 13 }}>هنوز گزارشی ذخیره نشده</div>
-        : [...history].reverse().map((h, i) => (
-          <div key={i} style={card({ padding: "16px 20px" })} className="fade-up">
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                <div style={{ width: 8, height: 8, borderRadius: "50%", background: T.coral, flexShrink: 0 }} />
-                <span style={{ fontSize: 13, fontWeight: 600, color: T.text1 }}>{h.dateLabel || h.date}</span>
-                <span style={{ fontSize: 11, color: T.text3, background: T.surface2, padding: "2px 9px", borderRadius: 20 }}>{h.names.length} تبلیغ‌کننده</span>
-              </div>
-              <button onClick={() => deleteHistoryEntry(h.date)} style={btnStyle({ fontSize: 11, padding: "5px 11px", color: T.danger, borderColor: T.dangerBorder })}>حذف</button>
-            </div>
-            <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-              {h.names.map((n, j) => <span key={j} style={{ fontSize: 11, color: T.coral, background: T.coralDim, border: `1px solid ${T.coralBorder}`, padding: "3px 10px", borderRadius: 20, direction: "ltr" }}>{n}</span>)}
-            </div>
           </div>
         ))}
     </div>
@@ -3480,7 +3429,6 @@ ${dataContext}`;
             {screen === "profile" && <AdvertiserProfileScreen />}
             {screen === "chat" && <ChatScreen />}
             {screen === "reports" && <ReportsScreen />}
-            {screen === "history" && <HistoryScreen />}
             {screen === "settings" && <SettingsScreen />}
           </div>
         </div>
