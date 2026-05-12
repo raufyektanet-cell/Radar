@@ -197,7 +197,7 @@ function parseFields(block: string): Record<string, string> {
   const obj: Record<string, string> = {}, known = ["NAME", "OWNERID", "AGENCIES", "SUMMARY", "NOTE", "PLATFORM", "NEWCLIENTS", "TOPCLIENTS"];
   const lines = block.split("\n"); let key: string | null = null, val: string[] = [];
   for (const line of lines) {
-    const ci = line.indexOf(":"), pk = ci > -1 ? line.slice(0, ci).trim() : null;
+    const ci = line.indexOf(":"), pk = ci > -1 ? line.slice(0, ci).trim().replace(/\*+/g, "") : null;
     if (pk && known.includes(pk)) { if (key) obj[key] = val.join("\n").trim(); key = pk; val = [line.slice(ci + 1).trim()]; }
     else if (key) val.push(line);
   }
