@@ -2812,6 +2812,98 @@ export default function App() {
       URL.revokeObjectURL(url);
     };
 
+    const exportHtml = () => {
+      const fn = (n: number) => n.toLocaleString("fa-IR");
+      const riskLabel = (s: number) => s > 180 ? `<span class="badge red">بالا</span>` : s > 100 ? `<span class="badge amber">متوسط</span>` : `<span class="badge grey">پایین</span>`;
+      const healthLabel = (p: number) => p >= 60 ? `<span class="badge green">سالم</span>` : p >= 40 ? `<span class="badge amber">نیاز به توجه</span>` : `<span class="badge red">در خطر</span>`;
+      const rows = allData.map((a, i) => `<tr>
+        <td>${i + 1}</td><td class="name">${a.name}</td><td>${a.cat1 || "—"}</td><td>${a.am.split(" ").slice(0, 2).join(" ") || "—"}</td><td>${a.team || "—"}</td>
+        <td data-val="${a.sessions}">${fn(a.sessions)}</td>
+        <td data-val="${a.yktShare}"><div class="bar-wrap"><div class="bar" style="width:${a.yktShare}%;background:${a.yktShare >= 60 ? "#22c55e" : a.yktShare >= 40 ? "#f59e0b" : "#ef4444"}"></div></div>${a.yktShare}٪</td>
+        <td>${healthLabel(a.yktShare)}</td>
+        <td data-val="${a.riskScore}">${riskLabel(a.riskScore)}</td>
+      </tr>`).join("");
+      const totalSess = allData.reduce((s, a) => s + a.sessions, 0);
+      const avgYkt = allData.length ? Math.round(allData.reduce((s, a) => s + a.yktShare, 0) / allData.length) : 0;
+      const atRisk = allData.filter(a => a.yktShare < 40).length;
+      const html = `<!DOCTYPE html><html lang="fa" dir="rtl"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>گزارش رادار — ${csvData!.stats.lastDate}</title>
+<link href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@400;600;700;800&display=swap" rel="stylesheet">
+<style>
+*{box-sizing:border-box;margin:0;padding:0}body{font-family:'Vazirmatn',Tahoma,sans-serif;background:#0f1117;color:#e2e8f0;direction:rtl;padding:32px 24px}
+h1{font-size:22px;font-weight:800;color:#fff;margin-bottom:4px}.sub{font-size:12px;color:#64748b;margin-bottom:28px}
+.stats{display:flex;gap:16px;margin-bottom:28px;flex-wrap:wrap}
+.stat{background:#1e2230;border:1px solid #2d3348;border-radius:12px;padding:16px 20px;min-width:140px}
+.stat .v{font-size:22px;font-weight:800;color:#6366f1;margin-bottom:2px}.stat .l{font-size:11px;color:#64748b}
+.controls{display:flex;gap:10px;margin-bottom:14px;align-items:center;flex-wrap:wrap}
+input{background:#1e2230;border:1px solid #2d3348;border-radius:8px;color:#e2e8f0;font-family:inherit;font-size:12px;padding:7px 12px;width:220px;outline:none}
+select{background:#1e2230;border:1px solid #2d3348;border-radius:8px;color:#e2e8f0;font-family:inherit;font-size:12px;padding:7px 10px;outline:none}
+table{width:100%;border-collapse:collapse;font-size:12px}
+th{background:#1a1d2e;color:#94a3b8;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;padding:10px 10px;border-bottom:1px solid #2d3348;cursor:pointer;user-select:none;white-space:nowrap}
+th:hover{color:#6366f1}th.sorted{color:#6366f1}
+td{padding:9px 10px;border-bottom:1px solid #1e2230;vertical-align:middle}
+tr:hover td{background:#1e2230}td.name{font-weight:600;color:#fff;max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.bar-wrap{display:inline-block;width:50px;height:4px;background:#2d3348;border-radius:2px;vertical-align:middle;margin-left:6px;overflow:hidden}
+.bar{height:100%;border-radius:2px}
+.badge{font-size:10px;font-weight:700;padding:2px 8px;border-radius:6px;white-space:nowrap}
+.badge.green{background:#14532d;color:#4ade80;border:1px solid #166534}
+.badge.amber{background:#451a03;color:#fbbf24;border:1px solid #78350f}
+.badge.red{background:#450a0a;color:#f87171;border:1px solid #7f1d1d}
+.badge.grey{background:#1e2230;color:#64748b;border:1px solid #2d3348}
+.footer{margin-top:28px;font-size:11px;color:#334155;text-align:center}
+</style></head><body>
+<h1>📊 گزارش رادار</h1>
+<div class="sub">فایل: ${csvData!.name} &nbsp;·&nbsp; آخرین تاریخ: ${csvData!.stats.lastDate} &nbsp;·&nbsp; تولید: ${new Date().toLocaleDateString("fa-IR")}</div>
+<div class="stats">
+  <div class="stat"><div class="v">${fn(allData.length)}</div><div class="l">تبلیغ‌کننده</div></div>
+  <div class="stat"><div class="v">${fn(totalSess)}</div><div class="l">کل سشن</div></div>
+  <div class="stat"><div class="v">${avgYkt}٪</div><div class="l">میانگین سهم یکتانت</div></div>
+  <div class="stat"><div class="v" style="color:#ef4444">${atRisk}</div><div class="l">در خطر (سهم &lt;۴۰٪)</div></div>
+</div>
+<div class="controls">
+  <input id="search" placeholder="جستجوی نام، صنعت، اکانت منیجر…" oninput="filter()">
+  <select id="health" onchange="filter()"><option value="">همه وضعیت‌ها</option><option value="سالم">سالم</option><option value="نیاز به توجه">نیاز به توجه</option><option value="در خطر">در خطر</option></select>
+  <select id="team" onchange="filter()"><option value="">همه تیم‌ها</option>${[...new Set(allData.map(a => a.team).filter(Boolean))].sort().map(t => `<option value="${t}">${t}</option>`).join("")}</select>
+  <span id="count" style="font-size:11px;color:#64748b;margin-right:auto"></span>
+</div>
+<table id="tbl">
+  <thead><tr>
+    <th onclick="sort(0)">#</th><th onclick="sort(1)">تبلیغ‌کننده</th><th onclick="sort(2)">صنعت</th><th onclick="sort(3)">اکانت منیجر</th><th onclick="sort(4)">تیم</th>
+    <th onclick="sort(5)">سشن</th><th onclick="sort(6)">سهم یکتانت</th><th>وضعیت</th><th onclick="sort(8)">ریسک</th>
+  </tr></thead>
+  <tbody id="tbody">${rows}</tbody>
+</table>
+<div class="footer">تولید شده توسط Radar · یکتانت</div>
+<script>
+const orig=[...document.querySelectorAll('#tbody tr')];
+let sc=-1,sd=1;
+function val(tr,i){const td=tr.cells[i];return td.dataset.val!==undefined?+td.dataset.val:td.innerText.trim()}
+function sort(i){sd=sc===i?-sd:1;sc=i;const h=document.querySelectorAll('th');h.forEach((t,j)=>{t.className=j===i?'sorted':''});apply()}
+function filter(){apply()}
+function apply(){
+  const q=document.getElementById('search').value.toLowerCase();
+  const hf=document.getElementById('health').value;
+  const tf=document.getElementById('team').value;
+  let rows=orig.filter(r=>{
+    const t=r.innerText.toLowerCase();
+    if(q&&!t.includes(q))return false;
+    if(hf&&!r.cells[7].innerText.includes(hf))return false;
+    if(tf&&r.cells[4].innerText.trim()!==tf)return false;
+    return true;
+  });
+  if(sc>=0)rows.sort((a,b)=>(val(a,sc)-val(b,sc))*sd||a.cells[1].innerText.localeCompare(b.cells[1].innerText,'fa'));
+  const tb=document.getElementById('tbody');tb.innerHTML='';rows.forEach(r=>tb.appendChild(r));
+  document.getElementById('count').innerText=rows.length+' تبلیغ‌کننده نمایش داده می‌شود';
+}
+apply();
+</script></body></html>`;
+      const blob = new Blob([html], { type: "text/html;charset=utf-8;" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url; link.download = `radar-report-${csvData!.stats.lastDate}.html`; link.click();
+      URL.revokeObjectURL(url);
+    };
+
     if (!csvData) return (
       <div style={{ textAlign: "center", padding: "5rem 2rem", display: "flex", flexDirection: "column", alignItems: "center", gap: 16 }}>
         <RadarHero />
@@ -2853,6 +2945,10 @@ export default function App() {
           <button onClick={exportCsv} style={{ display: "flex", alignItems: "center", gap: 6, padding: "7px 14px", borderRadius: 9, border: `1px solid ${D.accentBrd}`, background: D.accentDim, color: D.accent, fontSize: 12, cursor: "pointer", fontFamily: "Vazirmatn,sans-serif" }}>
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
             خروجی CSV
+          </button>
+          <button onClick={exportHtml} style={{ display: "flex", alignItems: "center", gap: 6, padding: "8px 18px", borderRadius: 9, border: "none", background: D.accent, color: "#fff", fontSize: 12, fontWeight: 700, cursor: "pointer", fontFamily: "Vazirmatn,sans-serif", boxShadow: `0 0 0 2px ${D.accentBrd}` }}>
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+            دانلود گزارش HTML
           </button>
           <input ref={compareInputRef} type="file" accept=".xlsx,.csv" style={{ display: "none" }} onChange={e => { if (e.target.files?.[0]) loadCompare(e.target.files[0]); e.target.value = ""; }} />
           {compareMap ? (
