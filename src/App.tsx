@@ -1146,7 +1146,7 @@ export default function App() {
 
   const runAnalysis = async (csvText: string, rows: Record<string, string>[], template = "standard", extra = ""): Promise<AnalysisResult> => {
     const managerMap = buildManagerMap(rows);
-    const preview = csvText.length > 15000 ? csvText.slice(0, 15000) + "\n...truncated" : csvText;
+    const preview = csvText.length > 45000 ? csvText.slice(0, 45000) + "\n...truncated" : csvText;
     const tmplInstr = TEMPLATE_INSTRUCTIONS[template] ? `\nTEMPLATE: ${TEMPLATE_INSTRUCTIONS[template]}` : "";
     const extraInstr = extra ? `\nADDITIONAL: ${extra}` : "";
     const apiKey = OPENROUTER_KEY || localStorage.getItem("radar:openrouter_key") || "";
@@ -1756,7 +1756,7 @@ export default function App() {
       cur.ykt += Number(r.Yektanet) || 0;
       dailyMap.set(d, cur);
     });
-    const dailyTrend = [...dailyMap.entries()].sort((a, b) => a[0].localeCompare(b[0])).slice(-7).map(([date, { total, ykt }]) => ({
+    const dailyTrend = [...dailyMap.entries()].sort((a, b) => a[0].localeCompare(b[0])).slice(-30).map(([date, { total, ykt }]) => ({
       date, total, share: total > 0 ? Math.round(ykt / total * 100) : 0,
     }));
 
@@ -2211,7 +2211,7 @@ export default function App() {
 
     // Compute per-advertiser per-day yktShare
     const rows = csvData.rows;
-    const dates = [...new Set(rows.map(r => r.Date || r.date).filter(Boolean))].sort().slice(-7);
+    const dates = [...new Set(rows.map(r => r.Date || r.date).filter(Boolean))].sort().slice(-30);
     const advDayMap = new Map<string, { name: string; days: Map<string, { ykt: number; total: number }> }>();
     rows.forEach(r => {
       const id = (r.Owner_id || r.Advertiser_name || "").trim();
