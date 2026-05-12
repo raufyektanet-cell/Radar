@@ -53,7 +53,7 @@ const ThemeCtx = createContext<Theme>(makeTokens(true));
 function useD() { return useContext(ThemeCtx); }
 
 const AGENCY_COLORS: Record<string, string> = {
-  "یکتانت": "#D4623A",
+  "یکتانت": "#F5C518",
   "تپسل": "#1A6FFF",   // Tapsell blue
   "ادکسو": "#8B5CF6",  // Adexo purple
   "آپارات": "#E8001C", // Aparat red (brand red)
@@ -620,7 +620,7 @@ function StackedBarsChart({ days, activeAgencies }: {
 
           {/* Scrollable bars + x-axis together */}
           <div style={{ overflowX: "auto", paddingBottom: 2 }}>
-            <div style={{ display: "flex", alignItems: "flex-end", gap: 3, minWidth: "max-content" }}>
+            <div style={{ display: "flex", alignItems: "flex-end", gap: 3, minWidth: "100%" }}>
               {days.map((d, i) => {
                 const total = d.ykt + d.comps.reduce((s, c) => s + c.value, 0);
                 const isHov = hovered === i;
@@ -632,7 +632,7 @@ function StackedBarsChart({ days, activeAgencies }: {
                 const showLabel = i === 0 || i === days.length - 1 || i % Math.max(1, Math.floor(days.length / 8)) === 0;
                 return (
                   <div key={i} onMouseEnter={() => setHovered(i)} onMouseLeave={() => setHovered(null)}
-                    style={{ flexShrink: 0, width: barW, display: "flex", flexDirection: "column", alignItems: "stretch", cursor: "crosshair", transition: "opacity .1s", opacity: hovered !== null && !isHov ? 0.35 : 1 }}>
+                    style={{ flex: 1, minWidth: 18, maxWidth: 44, display: "flex", flexDirection: "column", alignItems: "stretch", cursor: "crosshair", transition: "opacity .1s", opacity: hovered !== null && !isHov ? 0.35 : 1 }}>
                     {/* Bar segments stacked bottom-up */}
                     <div style={{ display: "flex", flexDirection: "column-reverse", height: CHART_H, alignItems: "stretch", gap: 1, borderBottom: `1px solid ${D.border2}` }}>
                       {segs.map((s, j) => (
@@ -640,7 +640,7 @@ function StackedBarsChart({ days, activeAgencies }: {
                       ))}
                       {/* Yektanet share % dot at the top of ykt segment */}
                       {isHov && total > 0 && (
-                        <div style={{ position: "absolute", bottom: `${d.ykt / maxTotal * CHART_H}px`, width: barW, display: "flex", justifyContent: "center", pointerEvents: "none" }}>
+                        <div style={{ position: "absolute", bottom: `${d.ykt / maxTotal * CHART_H}px`, width: "100%", display: "flex", justifyContent: "center", pointerEvents: "none" }}>
                           <div style={{ width: 5, height: 5, borderRadius: "50%", background: "#fff", boxShadow: `0 0 0 2px ${AGENCY_COLORS["یکتانت"]}` }} />
                         </div>
                       )}
@@ -1359,7 +1359,7 @@ export default function App() {
   // ─ Upload screen ────────────────────────────────────────────────────────────
   const UploadScreen = () => (
     <div style={{ display: "flex", flexDirection: "column", gap: 20, maxWidth: 680, margin: "0 auto" }}>
-      {step === "loading" ? <LoadingScreen /> : step === "upload" ? (
+      {step === "upload" ? (
         <>
           {/* Hero */}
           <div style={{ textAlign: "center", paddingTop: 16, paddingBottom: 4 }}>
