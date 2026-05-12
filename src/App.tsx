@@ -252,22 +252,119 @@ function buildMessage(result: AnalysisResult): string {
 }
 
 function generateHTML(result: AnalysisResult): string {
-  const agBar = (agencies: Agency[]) => {
-    const total = agencies.reduce((s, a) => s + a.value, 0);
-    if (!total) return "";
-    return `<div style="display:flex;border-radius:4px;overflow:hidden;height:5px;margin:8px 0 4px">${agencies.map(a => `<div style="flex:${a.value};background:${a.color}"></div>`).join("")}</div><div>${agencies.map(a => `<span style="font-size:11px;color:#888;display:inline-flex;align-items:center;gap:4px;margin-left:8px"><span style="width:8px;height:8px;border-radius:50%;background:${a.color};display:inline-block"></span>${a.name} ${Math.round(a.value / total * 100)}٪</span>`).join("")}</div>`;
-  };
-  const advCards = result.advertisers.map(adv => {
-    const total = adv.agencies.reduce((s, a) => s + a.value, 0), ykt = adv.agencies.find(a => a.name === "یکتانت"), yPct = total > 0 && ykt ? Math.round(ykt.value / total * 100) : 0;
-    return `<div style="flex:1;background:#fff;border:0.5px solid #D3CFC7;border-radius:12px;padding:12px 14px;margin-bottom:10px"><div style="font-weight:500;font-size:13px;direction:ltr">${adv.name} <span style="color:#888;font-size:11px">#${adv.ownerid}</span></div>${total > 0 ? `<div style="display:flex;align-items:center;gap:8px;margin-top:5px"><div style="flex:1;height:4px;border-radius:2px;background:#EDE8DF;overflow:hidden"><div style="width:${yPct}%;height:100%;background:#D4623A"></div></div><span style="font-size:11px;font-weight:500;color:#D4623A">یکتانت ${yPct}٪</span></div>` : ""}<p style="font-size:13px;color:#5F5E5A;line-height:1.9;margin:8px 0">${adv.summary || ""}</p>${agBar(adv.agencies)}</div>`;
-  }).join("");
-  return `<!DOCTYPE html><html lang="fa" dir="rtl"><head><meta charset="UTF-8"><title>گزارش بازار — ${result.dateLabel}</title><style>*{box-sizing:border-box;margin:0;padding:0}body{font-family:system-ui,sans-serif;background:#F5F0E8;color:#2C2C2A;direction:rtl;padding:1.5rem 1rem}.c{max-width:720px;margin:0 auto}</style></head><body><div class="c"><h2 style="margin-bottom:1rem">از مارکت چه خبر؟ ${result.dateLabel}</h2>${advCards}<p style="font-size:11px;color:#888;margin-top:1.5rem;font-style:italic">${result.disclaimer}</p></div></body></html>`;
+  const yktPct = (adv: Advertiser) => { const t = adv.agencies.reduce((s, a) => s + a.value, 0), y = adv.agencies.find(a => a.name === "یکتانت"); return t > 0 && y ? Math.round(y.value / t * 100) : 0; };
+  const hBadge = (p: number) => p >= 60 ? `<span class="b green">سالم</span>` : p >= 40 ? `<span class="b amber">نیاز به توجه</span>` : `<span class="b red">در خطر</span>`;
+  const hColor = (p: number) => p >= 60 ? "#22c55e" : p >= 40 ? "#f59e0b" : "#ef4444";
+  const agBar = (agencies: Agency[]) => { const t = agencies.reduce((s, a) => s + a.value, 0); if (!t) return ""; return `<div class="ag-track">${agencies.map(a => `<div style="flex:${a.value};background:${a.color}" title="${a.name} ${Math.round(a.value/t*100)}%"></div>`).join("")}</div><div class="ag-leg">${agencies.map(a => `<span><i style="background:${a.color}"></i>${a.name} ${Math.round(a.value/t*100)}٪</span>`).join("")}</div>`; };
+  const avgYkt = result.advertisers.length ? Math.round(result.advertisers.reduce((s, a) => s + yktPct(a), 0) / result.advertisers.length) : 0;
+  const atRisk = result.advertisers.filter(a => yktPct(a) < 40).length;
+
+  const advCards = result.advertisers.map(adv => { const p = yktPct(adv); return `<div class="card adv-card" data-name="${adv.name.toLowerCase()}" data-ind="${(adv.industry1||"").toLowerCase()}"><div class="adv-top"><div><div class="adv-name">${adv.name}</div><div class="adv-meta">${[adv.manager, adv.industry1].filter(Boolean).join(" · ")}</div></div><div class="adv-right">${hBadge(p)}<span class="pct" style="color:${hColor(p)}">${p}٪</span></div></div><div class="track"><div class="fill" style="width:${p}%;background:${hColor(p)}"></div></div>${adv.summary ? `<p class="summ">${adv.summary}</p>` : ""}${agBar(adv.agencies)}</div>`; }).join("");
+
+  const leadRows = result.leads.map(l => { const p = yktPct(l), t = l.agencies.reduce((s, a) => s + a.value, 0); return `<tr><td class="bold">${l.name}</td><td>${l.manager||"—"}</td><td>${l.industry1||"—"}</td><td>${t.toLocaleString()}</td><td><div class="track sm"><div class="fill" style="width:${p}%;background:${hColor(p)}"></div></div><span style="color:${hColor(p)}">${p}٪</span></td><td class="summ-td">${l.summary||"—"}</td></tr>`; }).join("");
+
+  const compCards = result.competitors.map(c => `<div class="card comp-card"><div class="comp-name">${c.platform}</div>${c.newclients?`<div class="comp-row"><span class="lbl">مشتریان جدید</span><span>${c.newclients}</span></div>`:""}${c.topclients?`<div class="comp-row"><span class="lbl">مشتریان اصلی</span><span>${c.topclients}</span></div>`:""}${c.note?`<div class="comp-note">${c.note}</div>`:""}</div>`).join("");
+
+  return `<!DOCTYPE html><html lang="fa" dir="rtl"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>گزارش رادار — ${result.dateLabel}</title>
+<link href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@400;600;700;800&display=swap" rel="stylesheet">
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Vazirmatn',Tahoma,sans-serif;background:#0c0e14;color:#cbd5e1;direction:rtl;min-height:100vh}
+.topbar{background:#0f1117;border-bottom:1px solid #1e2230;padding:0 28px;display:flex;align-items:center;height:56px;gap:16px;position:sticky;top:0;z-index:10}
+.logo{font-size:16px;font-weight:800;color:#fff;letter-spacing:-.5px}
+.logo span{color:#6366f1}
+.date{font-size:11px;color:#475569;background:#1e2230;border:1px solid #2d3348;border-radius:6px;padding:3px 10px}
+.stats{display:flex;gap:14px;padding:24px 28px 0;flex-wrap:wrap}
+.stat{background:#0f1117;border:1px solid #1e2230;border-radius:12px;padding:16px 20px;min-width:130px}
+.stat .v{font-size:22px;font-weight:800;color:#6366f1;line-height:1}.stat .l{font-size:11px;color:#475569;margin-top:3px}
+.tabs{display:flex;gap:2px;padding:20px 28px 0;border-bottom:1px solid #1e2230}
+.tab{padding:8px 18px;font-size:12px;font-weight:600;color:#475569;cursor:pointer;border-radius:8px 8px 0 0;border:1px solid transparent;border-bottom:none;transition:all .15s;font-family:inherit}
+.tab:hover{color:#94a3b8;background:#0f1117}.tab.active{color:#6366f1;background:#0f1117;border-color:#1e2230;margin-bottom:-1px;padding-bottom:9px}
+.tab-panel{display:none;padding:24px 28px}.tab-panel.active{display:block}
+.search-row{display:flex;gap:10px;margin-bottom:18px;flex-wrap:wrap}
+input,select{background:#0f1117;border:1px solid #1e2230;border-radius:8px;color:#e2e8f0;font-family:inherit;font-size:12px;padding:7px 12px;outline:none}
+input:focus,select:focus{border-color:#6366f1}
+input{width:260px}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:14px}
+.card{background:#0f1117;border:1px solid #1e2230;border-radius:12px;padding:16px 18px}
+.adv-top{display:flex;justify-content:space-between;align-items:flex-start;gap:8px;margin-bottom:8px}
+.adv-name{font-size:13px;font-weight:700;color:#f1f5f9;margin-bottom:2px}
+.adv-meta{font-size:11px;color:#475569}
+.adv-right{display:flex;align-items:center;gap:6px;flex-shrink:0}
+.pct{font-size:13px;font-weight:800;font-variant-numeric:tabular-nums}
+.track{height:4px;border-radius:2px;background:#1e2230;overflow:hidden;margin-bottom:10px}
+.track.sm{display:inline-block;width:50px;height:3px;vertical-align:middle;margin-left:6px}
+.fill{height:100%;border-radius:2px;transition:width .3s}
+.summ{font-size:12px;color:#64748b;line-height:1.8;margin-bottom:10px}
+.ag-track{display:flex;border-radius:3px;overflow:hidden;height:5px;margin:4px 0}
+.ag-leg{display:flex;flex-wrap:wrap;gap:6px;margin-top:5px}
+.ag-leg span{font-size:10px;color:#64748b;display:inline-flex;align-items:center;gap:3px}
+.ag-leg i{width:7px;height:7px;border-radius:50%;display:inline-block;flex-shrink:0}
+.b{font-size:10px;font-weight:700;padding:2px 7px;border-radius:5px;white-space:nowrap}
+.b.green{background:#14532d;color:#4ade80;border:1px solid #166534}
+.b.amber{background:#451a03;color:#fbbf24;border:1px solid #78350f}
+.b.red{background:#450a0a;color:#f87171;border:1px solid #7f1d1d}
+table{width:100%;border-collapse:collapse;font-size:12px}
+th{background:#0f1117;color:#475569;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;padding:10px;border-bottom:1px solid #1e2230;cursor:pointer;user-select:none;text-align:right}
+th:hover,th.s{color:#6366f1}
+td{padding:9px 10px;border-bottom:1px solid #0f1117;vertical-align:middle}
+tr:hover td{background:#0f1117}.bold{font-weight:600;color:#f1f5f9}
+.summ-td{font-size:11px;color:#475569;max-width:240px}
+.comp-card{background:#0f1117;border:1px solid #1e2230;border-radius:10px;padding:14px 16px}
+.comp-name{font-size:14px;font-weight:700;color:#a5b4fc;margin-bottom:8px}
+.comp-row{display:flex;gap:8px;font-size:12px;margin-bottom:4px}
+.lbl{color:#475569;flex-shrink:0}.comp-note{font-size:11px;color:#475569;margin-top:8px;line-height:1.7;border-top:1px solid #1e2230;padding-top:8px}
+.market-text{font-size:13px;line-height:2;color:#94a3b8;white-space:pre-wrap;max-width:720px}
+.empty{padding:3rem;text-align:center;color:#334155;font-size:13px}
+.count{font-size:11px;color:#475569}
+.footer{padding:24px 28px;font-size:11px;color:#1e2230;border-top:1px solid #1e2230;margin-top:8px}
+</style></head><body>
+<div class="topbar"><div class="logo">RADAR<span>.</span></div><div class="date">${result.dateLabel}</div><div style="flex:1"></div><div class="count" id="cnt"></div></div>
+<div class="stats">
+<div class="stat"><div class="v">${result.advertisers.length}</div><div class="l">تبلیغ‌کننده فعال</div></div>
+<div class="stat"><div class="v">${result.leads.length}</div><div class="l">لید</div></div>
+<div class="stat"><div class="v">${avgYkt}٪</div><div class="l">میانگین سهم یکتانت</div></div>
+<div class="stat"><div class="v" style="color:#ef4444">${atRisk}</div><div class="l">در خطر (سهم &lt;۴۰٪)</div></div>
+<div class="stat"><div class="v">${result.competitors.length}</div><div class="l">رقیب رصد شده</div></div>
+</div>
+<div class="tabs">
+<div class="tab active" onclick="go(0)">تبلیغ‌کننده‌ها <span class="count">(${result.advertisers.length})</span></div>
+<div class="tab" onclick="go(1)">لیدها <span class="count">(${result.leads.length})</span></div>
+<div class="tab" onclick="go(2)">رقبا <span class="count">(${result.competitors.length})</span></div>
+<div class="tab" onclick="go(3)">تحلیل بازار</div>
+</div>
+<div class="tab-panel active" id="p0">
+<div class="search-row">
+<input id="q" placeholder="جستجوی نام یا صنعت…" oninput="filt()">
+<select id="hf" onchange="filt()"><option value="">همه وضعیت‌ها</option><option value="green">سالم</option><option value="amber">نیاز به توجه</option><option value="red">در خطر</option></select>
+<span class="count" id="adv-cnt" style="margin-right:auto;align-self:center"></span>
+</div>
+<div class="grid" id="adv-grid">${advCards}</div>
+</div>
+<div class="tab-panel" id="p1">
+${result.leads.length ? `<table><thead><tr><th>نام</th><th>اکانت منیجر</th><th>صنعت</th><th>سشن</th><th>سهم یکتانت</th><th>خلاصه</th></tr></thead><tbody>${leadRows}</tbody></table>` : '<div class="empty">لیدی یافت نشد</div>'}
+</div>
+<div class="tab-panel" id="p2">
+<div class="grid">${compCards || '<div class="empty">رقیبی یافت نشد</div>'}</div>
+</div>
+<div class="tab-panel" id="p3">
+<div class="market-text">${result.market || "تحلیلی موجود نیست"}</div>
+</div>
+<div class="footer">گزارش تولید شده توسط Radar · یکتانت · ${new Date().toLocaleDateString("fa-IR")}</div>
+<script>
+const tabs=document.querySelectorAll('.tab'),panels=document.querySelectorAll('.tab-panel');
+function go(i){tabs.forEach((t,j)=>{t.classList.toggle('active',i===j)});panels.forEach((p,j)=>{p.classList.toggle('active',i===j)})}
+const cards=[...document.querySelectorAll('.adv-card')];
+function filt(){const q=document.getElementById('q').value.toLowerCase(),h=document.getElementById('hf').value;let n=0;cards.forEach(c=>{const ok=(!q||(c.dataset.name+c.dataset.ind).includes(q))&&(!h||c.querySelector('.b.'+h));c.style.display=ok?'':'none';if(ok)n++});document.getElementById('adv-cnt').textContent=n+' تبلیغ‌کننده';}
+filt();
+</script></body></html>`;
 }
 
 function downloadHTML(result: AnalysisResult) {
   const blob = new Blob([generateHTML(result)], { type: "text/html;charset=utf-8" });
   const url = URL.createObjectURL(blob), a = document.createElement("a");
-  a.href = url; a.download = `market-report-${result.dateLabel.replace(/ /g, "-")}.html`; a.click();
+  a.href = url; a.download = `radar-report-${result.dateLabel.replace(/ /g, "-")}.html`; a.click();
   URL.revokeObjectURL(url);
 }
 
@@ -783,7 +880,7 @@ function Sidebar({ screen, setScreen, isDark, setIsDark, hasResult, hasCsv, sess
 
 // ── Topbar v2 ─────────────────────────────────────────────────────────────────
 
-function Topbar({ screen, yktShare, alertCount, unsaved, onSave, setScreen }: { screen: string; yktShare: number | null; alertCount: number; unsaved: boolean; onSave: () => void; setScreen: (s: string) => void }) {
+function Topbar({ screen, yktShare, alertCount, unsaved, onSave, setScreen, onDownload }: { screen: string; yktShare: number | null; alertCount: number; unsaved: boolean; onSave: () => void; setScreen: (s: string) => void; onDownload?: () => void }) {
   const D = useD();
   const jalali = toJalali(new Date());
   const pageName = PAGE_NAMES[screen] || screen;
@@ -812,6 +909,13 @@ function Topbar({ screen, yktShare, alertCount, unsaved, onSave, setScreen }: { 
           <span style={{ fontSize: 10, color: D.t3 }}>سهم یکتانت</span>
           <span style={{ fontSize: 13, fontWeight: 800, color: D.accent, fontFamily: D.mono }}>{yktShare}٪</span>
         </div>
+      )}
+      {/* Download report */}
+      {onDownload && (
+        <button onClick={onDownload} title="دانلود گزارش کامل HTML" style={{ display: "flex", alignItems: "center", gap: 6, padding: "6px 14px", borderRadius: 9, border: "none", background: D.accent, color: "#fff", fontSize: 12, fontWeight: 700, cursor: "pointer", flexShrink: 0, fontFamily: "Vazirmatn,sans-serif" }}>
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+          دانلود گزارش
+        </button>
       )}
       {/* Alert bell */}
       <button onClick={() => setScreen("alerts")} aria-label="هشدارها" style={{ position: "relative", width: 36, height: 36, borderRadius: 9, border: `1px solid ${D.border}`, background: "transparent", color: D.t2, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
@@ -3505,7 +3609,7 @@ ${dataContext}`;
           button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible { outline: 2px solid ${tokens.accent}; outline-offset: 2px; border-radius: 4px; }
         `}</style>
 
-        <Topbar screen={screen} yktShare={topbarYktShare} alertCount={alertCount} unsaved={!!(pendingSave && saveStatus !== "saved")} onSave={confirmSave} setScreen={setScreen} />
+        <Topbar screen={screen} yktShare={topbarYktShare} alertCount={alertCount} unsaved={!!(pendingSave && saveStatus !== "saved")} onSave={confirmSave} setScreen={setScreen} onDownload={result ? () => downloadHTML(result) : undefined} />
         <Sidebar screen={screen} setScreen={setScreen} isDark={isDark} setIsDark={setIsDark} hasResult={!!result} hasCsv={!!csvData} session={session} onLogout={handleLogout} alertCount={alertCount} T={tokens} />
 
         <div className="print-main" style={{ marginRight: 200 }}>
