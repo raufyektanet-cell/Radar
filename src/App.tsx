@@ -53,11 +53,26 @@ const ThemeCtx = createContext<Theme>(makeTokens(true));
 function useD() { return useContext(ThemeCtx); }
 
 const AGENCY_COLORS: Record<string, string> = {
-  "یکتانت": "#D4623A", "تپسل": "#3B82F6", "ادکسو": "#8B5CF6", "آپارات": "#EF4444",
-  "یلو ادوایز": "#F59E0B", "بله": "#10B981", "روبیکا": "#EC4899", "دیما": "#6366F1",
-  "طاووس": "#14B8A6", "دارت": "#F97316", "چاووش": "#84CC16", "تلوبیون": "#06B6D4",
-  "ایتا": "#A78BFA", "سروش": "#FB923C", "نجوا": "#34D399", "بازار": "#64748B", "مایکت": "#78716C",
-  "تریبون": "#0EA5E9", "جریان": "#D946EF", "ادورج": "#22D3EE",
+  "یکتانت": "#D4623A",
+  "تپسل": "#1A6FFF",   // Tapsell blue
+  "ادکسو": "#8B5CF6",  // Adexo purple
+  "آپارات": "#E8001C", // Aparat red (brand red)
+  "یلو ادوایز": "#F59E0B",
+  "بله": "#25A244",    // Bale green (messenger green)
+  "روبیکا": "#D4146D", // Rubika magenta
+  "دیما": "#5046E4",   // Deema blue-purple
+  "طاووس": "#14B8A6",
+  "دارت": "#F97316",
+  "چاووش": "#84CC16",
+  "تلوبیون": "#E85C0D", // Telewebion orange-red
+  "ایتا": "#0A84FF",   // Eitaa blue (Telegram-like)
+  "سروش": "#2563EB",   // Soroush blue
+  "نجوا": "#34D399",
+  "بازار": "#2F9E44",  // Cafe Bazaar green (brand green)
+  "مایکت": "#1D4ED8",  // Myket blue
+  "تریبون": "#0EA5E9",
+  "جریان": "#D946EF",
+  "ادورج": "#22D3EE",
 };
 
 const TEMPLATE_INSTRUCTIONS: Record<string, string> = { standard: "" };
@@ -548,51 +563,117 @@ function StackedBarsChart({ days, activeAgencies }: {
   activeAgencies: { name: string; color: string }[];
 }) {
   const D = useD();
+  const [hovered, setHovered] = useState<number | null>(null);
   if (days.length === 0) return null;
-  const CHART_H = 160;
+
+  const CHART_H = 220;
   const maxTotal = Math.max(...days.map(d => d.ykt + d.comps.reduce((s, c) => s + c.value, 0)), 1);
-  const barW = Math.max(14, Math.min(36, Math.floor(720 / days.length) - 4));
+  const barW = Math.max(18, Math.min(44, Math.floor(800 / days.length) - 4));
+  const gridFracs = [0.25, 0.5, 0.75, 1.0];
+
+  // Period totals per agency for legend share %
+  const periodTotal = days.reduce((s, d) => s + d.ykt + d.comps.reduce((ss, c) => ss + c.value, 0), 0);
+  const periodYkt = days.reduce((s, d) => s + d.ykt, 0);
+  const agPeriodMap = new Map<string, number>();
+  days.forEach(d => d.comps.forEach(c => agPeriodMap.set(c.name, (agPeriodMap.get(c.name) || 0) + c.value)));
+
+  // Hovered day info
+  const hd = hovered !== null ? days[hovered] : null;
+  const hdTotal = hd ? hd.ykt + hd.comps.reduce((s, c) => s + c.value, 0) : 0;
+
   return (
     <div>
-      {/* Y-axis hint */}
-      <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
-        <span style={{ fontSize: 9, color: D.t3, fontFamily: D.mono }}>{formatNumber(maxTotal)}</span>
-        <span style={{ fontSize: 9, color: D.t3, fontFamily: D.mono }}>0</span>
-      </div>
-      {/* Bars */}
-      <div style={{ display: "flex", alignItems: "flex-end", gap: 3, height: CHART_H, overflowX: "auto", paddingBottom: 4, borderBottom: `1px solid ${D.border}` }}>
-        {days.map((d, i) => {
-          const total = d.ykt + d.comps.reduce((s, c) => s + c.value, 0);
-          const segs: { color: string; h: number }[] = [];
-          if (d.ykt > 0) segs.push({ color: AGENCY_COLORS["یکتانت"] || "#D4623A", h: Math.max(2, Math.round(d.ykt / maxTotal * (CHART_H - 4))) });
-          d.comps.forEach(c => { if (c.value > 0) segs.push({ color: c.color, h: Math.max(2, Math.round(c.value / maxTotal * (CHART_H - 4))) }); });
-          return (
-            <div key={i} title={`${d.date.slice(5)}\nمجموع: ${formatNumber(total)}\nیکتانت: ${formatNumber(d.ykt)} (${total > 0 ? Math.round(d.ykt / total * 100) : 0}٪)`}
-              style={{ flexShrink: 0, width: barW, display: "flex", flexDirection: "column-reverse", alignItems: "stretch", gap: 1, cursor: "default" }}>
-              {segs.map((s, j) => (
-                <div key={j} style={{ height: s.h, background: s.color, borderRadius: j === segs.length - 1 ? "3px 3px 0 0" : 0, opacity: 0.88 }} />
-              ))}
-            </div>
-          );
-        })}
-      </div>
-      {/* X-axis labels */}
-      <div style={{ display: "flex", gap: 3, marginTop: 4, overflowX: "hidden" }}>
-        {days.map((d, i) => (
-          <div key={i} style={{ flexShrink: 0, width: barW, textAlign: "center", fontSize: 9, color: D.t3, fontFamily: D.mono, overflow: "hidden" }}>
-            {i % Math.max(1, Math.floor(days.length / 10)) === 0 ? d.date.slice(5) : ""}
+      {/* Hover detail card */}
+      <div style={{ minHeight: 52, marginBottom: 10 }}>
+        {hd ? (
+          <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 14px", background: D.bg, borderRadius: 10, border: `1px solid ${D.border2}`, flexWrap: "wrap" }}>
+            <span style={{ fontSize: 12, fontWeight: 700, color: D.t1, fontFamily: D.mono }}>{hd.date.slice(5)}</span>
+            <span style={{ fontSize: 12, color: D.t3 }}>مجموع: <strong style={{ color: D.t1 }}>{formatNumber(hdTotal)}</strong></span>
+            <span style={{ fontSize: 12, color: AGENCY_COLORS["یکتانت"] }}>یکتانت: <strong>{formatNumber(hd.ykt)}</strong> ({hdTotal > 0 ? Math.round(hd.ykt / hdTotal * 100) : 0}٪)</span>
+            {hd.comps.sort((a, b) => b.value - a.value).slice(0, 4).map(c => (
+              <span key={c.name} style={{ fontSize: 11, color: c.color }}>{c.name}: <strong>{formatNumber(c.value)}</strong></span>
+            ))}
           </div>
-        ))}
+        ) : (
+          <div style={{ padding: "10px 14px", background: D.bg, borderRadius: 10, border: `1px solid ${D.border}`, fontSize: 12, color: D.t3 }}>
+            برای مشاهده جزئیات هر روز، موس را روی ستون ببرید
+          </div>
+        )}
       </div>
-      {/* Legend */}
-      {activeAgencies.length > 0 && (
-        <div style={{ display: "flex", flexWrap: "wrap", gap: "6px 14px", marginTop: 12 }}>
-          {activeAgencies.map(ag => (
-            <span key={ag.name} style={{ fontSize: 11, color: D.t2, display: "flex", alignItems: "center", gap: 5 }}>
-              <span style={{ width: 10, height: 10, borderRadius: 3, background: ag.color, display: "inline-block", flexShrink: 0 }} />
-              {ag.name}
-            </span>
+
+      <div style={{ display: "flex", gap: 8 }}>
+        {/* Y-axis labels — right side (RTL) */}
+        <div style={{ position: "relative", width: 58, height: CHART_H, flexShrink: 0 }}>
+          {gridFracs.map(f => (
+            <div key={f} style={{ position: "absolute", bottom: `${f * 100}%`, right: 0, transform: "translateY(50%)", fontSize: 9, color: D.t3, fontFamily: D.mono, whiteSpace: "nowrap", textAlign: "right" }}>
+              {formatNumber(Math.round(maxTotal * f))}
+            </div>
           ))}
+        </div>
+
+        {/* Chart area */}
+        <div style={{ flex: 1, position: "relative", minWidth: 0 }}>
+          {/* Gridlines (non-scrolling) */}
+          {gridFracs.map(f => (
+            <div key={f} style={{ position: "absolute", bottom: `${(f * CHART_H / (CHART_H + 22)) * 100}%`, left: 0, right: 0, height: 1, background: D.border, opacity: 0.6, pointerEvents: "none", zIndex: 0 }} />
+          ))}
+
+          {/* Scrollable bars + x-axis together */}
+          <div style={{ overflowX: "auto", paddingBottom: 2 }}>
+            <div style={{ display: "flex", alignItems: "flex-end", gap: 3, minWidth: "max-content" }}>
+              {days.map((d, i) => {
+                const total = d.ykt + d.comps.reduce((s, c) => s + c.value, 0);
+                const isHov = hovered === i;
+                const segs: { color: string; h: number; name: string }[] = [];
+                if (d.ykt > 0) segs.push({ name: "یکتانت", color: AGENCY_COLORS["یکتانت"], h: Math.max(3, Math.round(d.ykt / maxTotal * CHART_H)) });
+                [...d.comps].sort((a, b) => b.value - a.value).forEach(c => {
+                  if (c.value > 0) segs.push({ name: c.name, color: c.color, h: Math.max(3, Math.round(c.value / maxTotal * CHART_H)) });
+                });
+                const showLabel = i === 0 || i === days.length - 1 || i % Math.max(1, Math.floor(days.length / 8)) === 0;
+                return (
+                  <div key={i} onMouseEnter={() => setHovered(i)} onMouseLeave={() => setHovered(null)}
+                    style={{ flexShrink: 0, width: barW, display: "flex", flexDirection: "column", alignItems: "stretch", cursor: "crosshair", transition: "opacity .1s", opacity: hovered !== null && !isHov ? 0.35 : 1 }}>
+                    {/* Bar segments stacked bottom-up */}
+                    <div style={{ display: "flex", flexDirection: "column-reverse", height: CHART_H, alignItems: "stretch", gap: 1, borderBottom: `1px solid ${D.border2}` }}>
+                      {segs.map((s, j) => (
+                        <div key={j} style={{ height: s.h, background: s.color, borderRadius: j === segs.length - 1 ? "3px 3px 0 0" : 0, flexShrink: 0 }} />
+                      ))}
+                      {/* Yektanet share % dot at the top of ykt segment */}
+                      {isHov && total > 0 && (
+                        <div style={{ position: "absolute", bottom: `${d.ykt / maxTotal * CHART_H}px`, width: barW, display: "flex", justifyContent: "center", pointerEvents: "none" }}>
+                          <div style={{ width: 5, height: 5, borderRadius: "50%", background: "#fff", boxShadow: `0 0 0 2px ${AGENCY_COLORS["یکتانت"]}` }} />
+                        </div>
+                      )}
+                    </div>
+                    {/* X-axis label */}
+                    <div style={{ textAlign: "center", fontSize: 9, color: isHov ? D.t1 : D.t4, fontFamily: D.mono, marginTop: 4, overflow: "hidden", whiteSpace: "nowrap", fontWeight: isHov ? 700 : 400 }}>
+                      {showLabel || isHov ? d.date.slice(5) : ""}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Legend with period share % */}
+      {activeAgencies.length > 0 && (
+        <div style={{ marginTop: 14, paddingTop: 12, borderTop: `1px solid ${D.border}` }}>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: "8px 16px" }}>
+            {activeAgencies.map(ag => {
+              const vol = ag.name === "یکتانت" ? periodYkt : (agPeriodMap.get(ag.name) || 0);
+              const pct = periodTotal > 0 ? Math.round(vol / periodTotal * 100) : 0;
+              if (pct === 0) return null;
+              return (
+                <div key={ag.name} style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                  <span style={{ width: 11, height: 11, borderRadius: 3, background: ag.color, display: "inline-block", flexShrink: 0 }} />
+                  <span style={{ fontSize: 11, color: D.t2 }}>{ag.name}</span>
+                  <span style={{ fontSize: 11, fontWeight: 700, color: ag.color, fontFamily: D.mono }}>{pct}٪</span>
+                </div>
+              );
+            })}
+          </div>
         </div>
       )}
     </div>
