@@ -1102,7 +1102,8 @@ export default function App() {
   const [prevScreen, setPrevScreen] = useState("explorer");
   const [chatMessages, setChatMessages] = useState<{ role: "user" | "assistant"; content: string; ts: number }[]>([]);
   const [prevReportsText, setPrevReportsText] = useState<string | null>(null);
-  const [prevReportsName, setPrevReportsName] = useState<string | null>(null);
+  const [prevReportsInput, setPrevReportsInput] = useState("");
+  const [prevReportsExpanded, setPrevReportsExpanded] = useState(false);
 
   const goToProfile = (id: string) => { setPrevScreen(screen); setSelectedAdvId(id); setScreen("profile"); };
   const [loadingProgress, setLoadingProgress] = useState(0);
@@ -1136,12 +1137,20 @@ export default function App() {
   }, []);
   const onDrop = useCallback((e: React.DragEvent) => { e.preventDefault(); setDragOver(false); handleFile(e.dataTransfer.files[0]); }, [handleFile]);
 
-  const handlePrevFile = useCallback((file: File) => {
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = e => { setPrevReportsText(String(e.target?.result || "")); setPrevReportsName(file.name); };
-    reader.onerror = () => { setPrevReportsText(null); setPrevReportsName(null); };
-    reader.readAsText(file, "utf-8");
+  const parsePrevReports = useCallback((raw: string) => {
+    setPrevReportsInput(raw);
+    if (!raw.trim()) { setPrevReportsText(null); return; }
+    try {
+      const arr = JSON.parse(raw);
+      if (Array.isArray(arr)) {
+        const combined = arr.map((m: { text?: string }) => (m.text || "").trim()).filter(Boolean).join("\n\n---\n\n");
+        setPrevReportsText(combined || null);
+      } else {
+        setPrevReportsText(raw);
+      }
+    } catch {
+      setPrevReportsText(raw);
+    }
   }, []);
 
   const buildManagerMap = (rows: Record<string, string>[]): Record<string, string> => {
@@ -1281,7 +1290,7 @@ export default function App() {
     finally { setRegenLoading(null); }
   };
 
-  const reset = () => { setCsvData(null); setResult(null); setPendingSave(null); setStep("upload"); setErrMsg(""); setRawDebug(""); setShowDebug(false); setSaveStatus(""); setSearchQuery(""); setFilterAgency("all"); setScreen("upload"); setPrevReportsText(null); setPrevReportsName(null); };
+  const reset = () => { setCsvData(null); setResult(null); setPendingSave(null); setStep("upload"); setErrMsg(""); setRawDebug(""); setShowDebug(false); setSaveStatus(""); setSearchQuery(""); setFilterAgency("all"); setScreen("upload"); setPrevReportsText(null); setPrevReportsInput(""); setPrevReportsExpanded(false); };
 
   const saveApiKey = () => {
     const trimmed = apiKeyInput.trim();
@@ -1397,28 +1406,39 @@ export default function App() {
             <input id="fi" type="file" accept=".csv,.xlsx,.xls" style={{ display: "none" }} onChange={e => handleFile(e.target.files![0])} />
           </div>
 
-          {/* Previous reports upload */}
-          <div style={{ border: `1px solid ${T.border}`, borderRadius: 16, overflow: "hidden" }}>
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 16px", background: T.surface }}>
+          {/* Previous reports paste */}
+          <div style={{ border: `1px solid ${prevReportsText ? T.greenBorder : T.border}`, borderRadius: 16, overflow: "hidden", transition: "border-color 0.2s" }}>
+            <div onClick={() => setPrevReportsExpanded(v => !v)} role="button" tabIndex={0}
+              onKeyDown={e => (e.key === "Enter" || e.key === " ") && setPrevReportsExpanded(v => !v)}
+              style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 16px", background: T.surface, cursor: "pointer", userSelect: "none" }}>
               <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={T.text3} strokeWidth="1.8"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="8" y1="13" x2="16" y2="13"/><line x1="8" y1="17" x2="12" y2="17"/></svg>
-                <span style={{ fontSize: 12, fontWeight: 600, color: T.text2 }}>گزارش‌های قبلی</span>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={prevReportsText ? T.green : T.text3} strokeWidth="1.8"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="8" y1="13" x2="16" y2="13"/><line x1="8" y1="17" x2="12" y2="17"/></svg>
+                <span style={{ fontSize: 12, fontWeight: 600, color: prevReportsText ? T.green : T.text2 }}>گزارش‌های قبلی</span>
                 <span style={{ fontSize: 10, color: T.text3, padding: "2px 7px", borderRadius: 5, border: `1px solid ${T.border}`, background: T.surface2 }}>اختیاری</span>
+                {prevReportsText && <span style={{ fontSize: 10, color: T.green }}>✓ بارگذاری شد</span>}
               </div>
-              {prevReportsName ? (
-                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                  <span style={{ fontSize: 11, color: T.green, maxWidth: 140, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{prevReportsName}</span>
-                  <button onClick={() => { setPrevReportsText(null); setPrevReportsName(null); }} style={{ padding: "3px 8px", borderRadius: 6, border: `1px solid ${T.border}`, background: "transparent", color: T.text3, fontSize: 11, cursor: "pointer", fontFamily: "Vazirmatn,sans-serif" }}>حذف</button>
-                </div>
-              ) : (
-                <button onClick={() => document.getElementById("fi-prev")!.click()} style={{ padding: "5px 12px", borderRadius: 8, border: `1px solid ${T.border}`, background: T.surface2, color: T.text2, fontSize: 11, cursor: "pointer", fontFamily: "Vazirmatn,sans-serif" }}>انتخاب فایل</button>
-              )}
-              <input id="fi-prev" type="file" accept=".txt,.csv,.xlsx,.xls" style={{ display: "none" }} onChange={e => { if (e.target.files?.[0]) handlePrevFile(e.target.files[0]); }} />
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={T.text3} strokeWidth="2" style={{ transform: prevReportsExpanded ? "rotate(180deg)" : "rotate(0deg)", transition: "transform 0.2s" }}><polyline points="6 9 12 15 18 9"/></svg>
             </div>
-            {!prevReportsName && (
-              <p style={{ margin: 0, padding: "8px 16px 12px", fontSize: 11, color: T.text3, background: T.surface }}>
-                فایل متنی پیام‌هایی که قبلاً در گروه فرستادید — ادورتایزرهای تکراری حذف می‌شن
-              </p>
+            {prevReportsExpanded && (
+              <div style={{ padding: "0 16px 16px", background: T.surface, borderTop: `1px solid ${T.border}` }}>
+                <p style={{ margin: "10px 0 8px", fontSize: 11, color: T.text3 }}>JSON پیام‌هایی که قبلاً در گروه فرستادید رو اینجا paste کنید — ادورتایزرهای تکراری حذف می‌شن</p>
+                <textarea
+                  value={prevReportsInput}
+                  onChange={e => parsePrevReports(e.target.value)}
+                  placeholder='[{"text": "...", "sender": "...", "date": "..."}, ...]'
+                  rows={6}
+                  style={{ width: "100%", boxSizing: "border-box", fontSize: 11, fontFamily: "monospace", padding: "10px 12px", borderRadius: 10, border: `1px solid ${T.border}`, background: T.surface2, color: T.text1, resize: "vertical", outline: "none", direction: "ltr" }}
+                />
+                {prevReportsInput && !prevReportsText && (
+                  <p style={{ margin: "6px 0 0", fontSize: 11, color: T.danger }}>فرمت نامعتبر — متن خام ارسال می‌شه</p>
+                )}
+                {prevReportsText && (
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 8 }}>
+                    <span style={{ fontSize: 11, color: T.green }}>✓ آماده‌ست</span>
+                    <button onClick={() => { parsePrevReports(""); }} style={{ padding: "3px 10px", borderRadius: 6, border: `1px solid ${T.border}`, background: "transparent", color: T.text3, fontSize: 11, cursor: "pointer", fontFamily: "Vazirmatn,sans-serif" }}>پاک کردن</button>
+                  </div>
+                )}
+              </div>
             )}
           </div>
 
