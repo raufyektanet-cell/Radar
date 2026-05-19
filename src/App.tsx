@@ -85,9 +85,9 @@ CSV STRUCTURE
 - OUR NETWORK: Yektanet only | COMPETITORS: all others | Empty/blank=0
 - _ny suffix = non-Yektanet traffic on that platform
 
-SPECIAL: همکده،5040،بیکوپلاس،Owner_id 9868=SKIP. Aparat/Tavoos/Telewebion=VIDEO only. Aparat-owned=NOT leads.
+SPECIAL: همکده،5040،بیکوپلاس،Owner_id 9868,30898,200=SKIP. Aparat/Tavoos/Telewebion=VIDEO only. Aparat-owned=NOT leads.
 
-PRIORITY: +5 reactivated | +4 very high sessions | +3 new/cut agency or Yektanet declining >20pts | +2 3+ agencies/high sessions | +1 dominant changed | -999 id 9868 | -3 همکده/5040/بیکوپلاس | -2 minor. Aim 8-12.
+PRIORITY: +5 reactivated | +4 very high sessions | +3 new/cut agency or Yektanet declining >20pts | +2 3+ agencies/high sessions | +1 dominant changed | -999 id 9868,30898,200 | -3 همکده/5040/بیکوپلاس | -2 minor. Aim 8-12.
 
 AGENCY TRANSLATIONS: Yektanet→یکتانت|Tapsell→تپسل|Adexo→ادکسو|Aparat→آپارات|Deema→دیما|Tavoos→طاووس|Yellowadwise→یلو ادوایز|Daart→دارت|Chavosh→چاووش|Telewebion→تلوبیون|Bale_ny→بله|Rubika_ny→روبیکا|Eitaa_ny→ایتا|Soroush_ny→سروش|Soroush→سروش|Najva→نجوا|Triboon→تریبون|Jaryan→جریان|Adverge→ادورج|Bazaar→بازار|Myket→مایکت
 
@@ -1101,6 +1101,9 @@ export default function App() {
   const [selectedAdvId, setSelectedAdvId] = useState<string | null>(null);
   const [prevScreen, setPrevScreen] = useState("explorer");
   const [chatMessages, setChatMessages] = useState<{ role: "user" | "assistant"; content: string; ts: number }[]>([]);
+  const [prevReportsText, setPrevReportsText] = useState<string | null>(null);
+  const [prevReportsInput, setPrevReportsInput] = useState("");
+  const [prevReportsExpanded, setPrevReportsExpanded] = useState(false);
 
   const goToProfile = (id: string) => { setPrevScreen(screen); setSelectedAdvId(id); setScreen("profile"); };
   const [loadingProgress, setLoadingProgress] = useState(0);
@@ -1134,6 +1137,22 @@ export default function App() {
   }, []);
   const onDrop = useCallback((e: React.DragEvent) => { e.preventDefault(); setDragOver(false); handleFile(e.dataTransfer.files[0]); }, [handleFile]);
 
+  const parsePrevReports = useCallback((raw: string) => {
+    setPrevReportsInput(raw);
+    if (!raw.trim()) { setPrevReportsText(null); return; }
+    try {
+      const arr = JSON.parse(raw);
+      if (Array.isArray(arr)) {
+        const combined = arr.map((m: { text?: string }) => (m.text || "").trim()).filter(Boolean).join("\n\n---\n\n");
+        setPrevReportsText(combined || null);
+      } else {
+        setPrevReportsText(raw);
+      }
+    } catch {
+      setPrevReportsText(raw);
+    }
+  }, []);
+
   const buildManagerMap = (rows: Record<string, string>[]): Record<string, string> => {
     const map: Record<string, string> = {};
     rows.forEach(r => {
@@ -1144,11 +1163,12 @@ export default function App() {
     return map;
   };
 
-  const runAnalysis = async (csvText: string, rows: Record<string, string>[], template = "standard", extra = ""): Promise<AnalysisResult> => {
+  const runAnalysis = async (csvText: string, rows: Record<string, string>[], template = "standard", extra = "", prevReports = ""): Promise<AnalysisResult> => {
     const managerMap = buildManagerMap(rows);
     const preview = csvText.length > 45000 ? csvText.slice(0, 45000) + "\n...truncated" : csvText;
     const tmplInstr = TEMPLATE_INSTRUCTIONS[template] ? `\nTEMPLATE: ${TEMPLATE_INSTRUCTIONS[template]}` : "";
     const extraInstr = extra ? `\nADDITIONAL: ${extra}` : "";
+    const prevReportsInstr = prevReports ? `\n\nPREVIOUS_REPORTS (already sent to group — do NOT output any ##ADVERTISER## or ##LEAD## block for advertisers already mentioned here; skip them entirely):\n${prevReports.slice(0, 10000)}` : "";
     const apiKey = OPENROUTER_KEY || localStorage.getItem("radar:openrouter_key") || "";
     if (!apiKey) throw new Error("کلید API تنظیم نشده. لطفاً کلید OpenRouter را وارد کنید.");
     const resp = await fetch("https://openrouter.ai/api/v1/chat/completions", {
@@ -1158,7 +1178,7 @@ export default function App() {
         "Authorization": `Bearer ${apiKey}`,
         "HTTP-Referer": "https://raufyektanet-cell.github.io/Radar/",
       },
-      body: JSON.stringify({ model: MODEL, max_tokens: 4000, stream: true, messages: [{ role: "system", content: SYSTEM_PROMPT }, { role: "user", content: `Data:\n\n${preview}${tmplInstr}${extraInstr}\n\nToday is ${todayLabel()}. Start with ##. No preamble.` }] })
+      body: JSON.stringify({ model: MODEL, max_tokens: 4000, stream: true, messages: [{ role: "system", content: SYSTEM_PROMPT }, { role: "user", content: `Data:\n\n${preview}${tmplInstr}${extraInstr}${prevReportsInstr}\n\nToday is ${todayLabel()}. Start with ##. No preamble.` }] })
     });
     if (!resp.ok) throw new Error(`HTTP ${resp.status}: ${await resp.text().catch(() => "")}`);
     const reader = resp.body!.getReader();
@@ -1240,7 +1260,7 @@ export default function App() {
       const filteredRows = filterRowsByManager(csvData!.rows);
       const filteredCsv = filteredRows.map(r => Object.values(r).join(",")).join("\n");
       const csvHeader = Object.keys(filteredRows[0] || {}).join(",");
-      const parsed = await runAnalysis(csvHeader + "\n" + filteredCsv, filteredRows, selectedTemplate);
+      const parsed = await runAnalysis(csvHeader + "\n" + filteredCsv, filteredRows, selectedTemplate, "", prevReportsText || "");
       stopLoadingProgress();
       if (!parsed.advertisers.length && !parsed.leads.length && !parsed.competitors.length) {
         setErrMsg("هیچ بلاکی پارس نشد — پاسخ خام در دیباگ"); setShowDebug(true); setStep("ready"); return;
@@ -1270,7 +1290,7 @@ export default function App() {
     finally { setRegenLoading(null); }
   };
 
-  const reset = () => { setCsvData(null); setResult(null); setPendingSave(null); setStep("upload"); setErrMsg(""); setRawDebug(""); setShowDebug(false); setSaveStatus(""); setSearchQuery(""); setFilterAgency("all"); setScreen("upload"); };
+  const reset = () => { setCsvData(null); setResult(null); setPendingSave(null); setStep("upload"); setErrMsg(""); setRawDebug(""); setShowDebug(false); setSaveStatus(""); setSearchQuery(""); setFilterAgency("all"); setScreen("upload"); setPrevReportsText(null); setPrevReportsInput(""); setPrevReportsExpanded(false); };
 
   const saveApiKey = () => {
     const trimmed = apiKeyInput.trim();
@@ -1384,6 +1404,42 @@ export default function App() {
               ))}
             </span>
             <input id="fi" type="file" accept=".csv,.xlsx,.xls" style={{ display: "none" }} onChange={e => handleFile(e.target.files![0])} />
+          </div>
+
+          {/* Previous reports paste */}
+          <div style={{ border: `1px solid ${prevReportsText ? T.greenBorder : T.border}`, borderRadius: 16, overflow: "hidden", transition: "border-color 0.2s" }}>
+            <div onClick={() => setPrevReportsExpanded(v => !v)} role="button" tabIndex={0}
+              onKeyDown={e => (e.key === "Enter" || e.key === " ") && setPrevReportsExpanded(v => !v)}
+              style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 16px", background: T.surface, cursor: "pointer", userSelect: "none" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={prevReportsText ? T.green : T.text3} strokeWidth="1.8"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="8" y1="13" x2="16" y2="13"/><line x1="8" y1="17" x2="12" y2="17"/></svg>
+                <span style={{ fontSize: 12, fontWeight: 600, color: prevReportsText ? T.green : T.text2 }}>گزارش‌های قبلی</span>
+                <span style={{ fontSize: 10, color: T.text3, padding: "2px 7px", borderRadius: 5, border: `1px solid ${T.border}`, background: T.surface2 }}>اختیاری</span>
+                {prevReportsText && <span style={{ fontSize: 10, color: T.green }}>✓ بارگذاری شد</span>}
+              </div>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={T.text3} strokeWidth="2" style={{ transform: prevReportsExpanded ? "rotate(180deg)" : "rotate(0deg)", transition: "transform 0.2s" }}><polyline points="6 9 12 15 18 9"/></svg>
+            </div>
+            {prevReportsExpanded && (
+              <div style={{ padding: "0 16px 16px", background: T.surface, borderTop: `1px solid ${T.border}` }}>
+                <p style={{ margin: "10px 0 8px", fontSize: 11, color: T.text3 }}>JSON پیام‌هایی که قبلاً در گروه فرستادید رو اینجا paste کنید — ادورتایزرهای تکراری حذف می‌شن</p>
+                <textarea
+                  value={prevReportsInput}
+                  onChange={e => parsePrevReports(e.target.value)}
+                  placeholder='[{"text": "...", "sender": "...", "date": "..."}, ...]'
+                  rows={6}
+                  style={{ width: "100%", boxSizing: "border-box", fontSize: 11, fontFamily: "monospace", padding: "10px 12px", borderRadius: 10, border: `1px solid ${T.border}`, background: T.surface2, color: T.text1, resize: "vertical", outline: "none", direction: "ltr" }}
+                />
+                {prevReportsInput && !prevReportsText && (
+                  <p style={{ margin: "6px 0 0", fontSize: 11, color: T.danger }}>فرمت نامعتبر — متن خام ارسال می‌شه</p>
+                )}
+                {prevReportsText && (
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 8 }}>
+                    <span style={{ fontSize: 11, color: T.green }}>✓ آماده‌ست</span>
+                    <button onClick={() => { parsePrevReports(""); }} style={{ padding: "3px 10px", borderRadius: 6, border: `1px solid ${T.border}`, background: "transparent", color: T.text3, fontSize: 11, cursor: "pointer", fontFamily: "Vazirmatn,sans-serif" }}>پاک کردن</button>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
 
           {/* API key warning */}
